@@ -33,16 +33,17 @@ export function AppShell({ children }: { children: ReactNode }) {
           "--sidebar-width": "14rem",
         } as CSSProperties}
       >
-        <Sidebar collapsible="icon" className="pt-11">
-          <SidebarHeader className="h-16 justify-center px-3">
-            <div className="flex items-center gap-3 overflow-hidden px-1 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
+        <Sidebar collapsible="icon">
+          <SidebarHeader className="h-16 flex-row items-center px-3">
+            <div className="flex min-w-0 flex-1 items-center gap-3 overflow-hidden px-1 group-data-[collapsible=icon]:hidden">
               <div className="grid size-8 shrink-0 place-items-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground shadow-[0_0_24px_-6px_var(--sidebar-primary)]">
                 <AudioLines className="size-4" />
               </div>
-              <span className="truncate text-sm font-semibold tracking-wide group-data-[collapsible=icon]:hidden">
+              <span className="truncate text-sm font-semibold tracking-wide">
                 SONAR
               </span>
             </div>
+            <SidebarTrigger className="shrink-0" />
           </SidebarHeader>
 
           <SidebarContent>
@@ -87,11 +88,8 @@ export function AppShell({ children }: { children: ReactNode }) {
           <SidebarRail />
         </Sidebar>
 
-        <SidebarInset className="min-w-0 pt-11">
-          <div className="fixed inset-x-0 top-0 z-50 h-11 border-b border-border/70 bg-background/90 [-webkit-app-region:drag]">
-            <SidebarTrigger className="absolute left-2 top-2" />
-          </div>
-          <main className="h-[calc(100vh-2.75rem)] overflow-y-auto">{children}</main>
+        <SidebarInset className="min-w-0">
+          <main className="h-screen overflow-y-auto">{children}</main>
         </SidebarInset>
       </SidebarProvider>
     </TooltipProvider>

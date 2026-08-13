@@ -1,19 +1,14 @@
 import { join } from "node:path"
-import { app, BrowserWindow, shell } from "electron"
+import { app, BrowserWindow, Menu, shell } from "electron"
 
 function createWindow(): void {
   const window = new BrowserWindow({
+    title: "Sonar",
     width: 1120,
     height: 760,
     minWidth: 760,
     minHeight: 560,
     backgroundColor: "#121217",
-    titleBarStyle: "hidden",
-    titleBarOverlay: {
-      color: "#121217",
-      symbolColor: "#94a3b8",
-      height: 44,
-    },
     webPreferences: {
       preload: join(__dirname, "../preload/index.js"),
       sandbox: true,
@@ -21,6 +16,8 @@ function createWindow(): void {
       nodeIntegration: false,
     },
   })
+
+  Menu.setApplicationMenu(null)
 
   window.webContents.setWindowOpenHandler(({ url }) => {
     void shell.openExternal(url)
