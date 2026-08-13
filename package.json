@@ -12,11 +12,12 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@base-ui/react": "^1.7.0",
     "@radix-ui/react-slot": "latest",
     "@tanstack/react-router": "latest",
     "class-variance-authority": "latest",
     "clsx": "latest",
-    "lucide-react": "latest",
+    "lucide-react": "^1.31.0",
     "react": "latest",
     "react-dom": "latest",
     "tailwind-merge": "latest"
