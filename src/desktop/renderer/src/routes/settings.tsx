@@ -8,7 +8,7 @@ export const Route = createFileRoute("/settings")({
 
 function SettingsPage() {
   return (
-    <div className="mx-auto min-h-full max-w-4xl px-8 py-10 lg:px-12">
+    <div className="min-h-full w-full px-8 py-10 lg:px-12">
       <header>
         <h1 className="text-3xl font-semibold tracking-tight">Settings</h1>
         <p className="mt-2 text-sm text-muted-foreground">Configure how Sonar works on this device.</p>

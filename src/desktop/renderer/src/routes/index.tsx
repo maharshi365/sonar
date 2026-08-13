@@ -9,7 +9,7 @@ export const Route = createFileRoute("/")({
 
 function HomePage() {
   return (
-    <div className="mx-auto flex min-h-full max-w-4xl flex-col px-8 py-10 lg:px-12">
+    <div className="min-h-full w-full px-8 py-10 lg:px-12">
       <header>
         <p className="mb-2 text-xs font-medium uppercase tracking-[0.2em] text-primary">Local transcription</p>
         <h1 className="text-3xl font-semibold tracking-tight">Ready when you are.</h1>
@@ -18,7 +18,7 @@ function HomePage() {
         </p>
       </header>
 
-      <section className="my-auto flex flex-col items-center py-14 text-center">
+      <section className="mt-20 flex flex-col items-center text-center">
         <div className="relative mb-8">
           <div className="absolute inset-0 scale-150 rounded-full bg-primary/10 blur-2xl" />
           <Button className="relative size-24 rounded-full shadow-[0_0_50px_-12px_var(--primary)]" size="icon" aria-label="Start recording">
@@ -35,7 +35,7 @@ function HomePage() {
         </div>
       </section>
 
-      <footer className="flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-border pt-5 text-xs text-muted-foreground">
+      <footer className="mt-20 flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-border pt-5 text-xs text-muted-foreground">
         <span className="flex items-center gap-2"><Waves className="size-3.5 text-primary" /> No model installed</span>
         <span className="flex items-center gap-2"><ShieldCheck className="size-3.5" /> Audio stays on this device</span>
       </footer>

@@ -7,10 +7,10 @@ function createWindow(): void {
     height: 760,
     minWidth: 760,
     minHeight: 560,
-    backgroundColor: "#080c14",
+    backgroundColor: "#121217",
     titleBarStyle: "hidden",
     titleBarOverlay: {
-      color: "#080c14",
+      color: "#121217",
       symbolColor: "#94a3b8",
       height: 44,
     },

@@ -7,15 +7,15 @@ import { cn } from "@/lib/utils"
 
 const navLinkClass = cn(
   buttonVariants({ variant: "ghost" }),
-  "w-full justify-start text-muted-foreground",
+  "w-full justify-start text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-sidebar-ring",
 )
 
 export function AppShell({ children }: { children: ReactNode }) {
   return (
     <div className="flex min-h-screen bg-background text-foreground">
-      <aside className="flex w-56 shrink-0 flex-col border-r border-border bg-card/40 pt-11">
+      <aside className="flex w-56 shrink-0 flex-col border-r border-sidebar-border bg-sidebar pt-11 text-sidebar-foreground">
         <div className="flex h-16 items-center gap-3 px-5">
-          <div className="grid size-8 place-items-center rounded-lg bg-primary text-primary-foreground shadow-[0_0_24px_-6px_var(--primary)]">
+          <div className="grid size-8 place-items-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground shadow-[0_0_24px_-6px_var(--sidebar-primary)]">
             <AudioLines className="size-4" />
           </div>
           <span className="text-sm font-semibold tracking-wide">SONAR</span>
@@ -25,7 +25,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <Link
             to="/"
             activeOptions={{ exact: true }}
-            activeProps={{ className: "bg-secondary text-secondary-foreground" }}
+            activeProps={{ className: "bg-sidebar-accent text-sidebar-accent-foreground" }}
             className={navLinkClass}
           >
             <AudioLines />
@@ -33,7 +33,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           </Link>
           <Link
             to="/history"
-            activeProps={{ className: "bg-secondary text-secondary-foreground" }}
+            activeProps={{ className: "bg-sidebar-accent text-sidebar-accent-foreground" }}
             className={navLinkClass}
           >
             <History />
@@ -41,7 +41,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           </Link>
           <Link
             to="/models"
-            activeProps={{ className: "bg-secondary text-secondary-foreground" }}
+            activeProps={{ className: "bg-sidebar-accent text-sidebar-accent-foreground" }}
             className={navLinkClass}
           >
             <Box />
@@ -52,7 +52,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div className="mt-auto p-3">
           <Link
             to="/settings"
-            activeProps={{ className: "bg-secondary text-secondary-foreground" }}
+            activeProps={{ className: "bg-sidebar-accent text-sidebar-accent-foreground" }}
             className={navLinkClass}
           >
             <Settings />
