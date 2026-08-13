@@ -1,8 +1,13 @@
+import { createFileRoute } from "@tanstack/react-router"
 import { Mic, ShieldCheck, Waves } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 
-export function HomePage() {
+export const Route = createFileRoute("/")({
+  component: HomePage,
+})
+
+function HomePage() {
   return (
     <div className="mx-auto flex min-h-full max-w-4xl flex-col px-8 py-10 lg:px-12">
       <header>

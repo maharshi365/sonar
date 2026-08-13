@@ -23,6 +23,7 @@
   },
   "devDependencies": {
     "@tailwindcss/vite": "latest",
+    "@tanstack/router-plugin": "^1.168.30",
     "@types/node": "latest",
     "@types/react": "latest",
     "@types/react-dom": "latest",

@@ -1,5 +1,6 @@
 import { resolve } from "node:path"
 import tailwindcss from "@tailwindcss/vite"
+import { tanstackRouter } from "@tanstack/router-plugin/vite"
 import react from "@vitejs/plugin-react"
 import { defineConfig, externalizeDepsPlugin } from "electron-vite"
 
@@ -27,7 +28,15 @@ export default defineConfig({
         "@": resolve("src/desktop/renderer/src"),
       },
     },
-    plugins: [react(), tailwindcss()],
+    plugins: [
+      tanstackRouter({
+        target: "react",
+        routesDirectory: resolve("src/desktop/renderer/src/routes"),
+        generatedRouteTree: resolve("src/desktop/renderer/src/routeTree.gen.ts"),
+      }),
+      react(),
+      tailwindcss(),
+    ],
     build: {
       rollupOptions: {
         input: {

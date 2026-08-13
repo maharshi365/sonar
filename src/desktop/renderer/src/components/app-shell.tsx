@@ -1,7 +1,14 @@
 import type { ReactNode } from "react"
-import { AudioLines, History, Settings } from "lucide-react"
+import { Link } from "@tanstack/react-router"
+import { AudioLines, Box, History, Settings } from "lucide-react"
 
-import { Button } from "@/components/ui/button"
+import { buttonVariants } from "@/components/ui/button"
+import { cn } from "@/lib/utils"
+
+const navLinkClass = cn(
+  buttonVariants({ variant: "ghost" }),
+  "w-full justify-start text-muted-foreground",
+)
 
 export function AppShell({ children }: { children: ReactNode }) {
   return (
@@ -15,21 +22,42 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
 
         <nav className="space-y-1 px-3 py-2" aria-label="Primary navigation">
-          <Button className="w-full justify-start" variant="secondary">
+          <Link
+            to="/"
+            activeOptions={{ exact: true }}
+            activeProps={{ className: "bg-secondary text-secondary-foreground" }}
+            className={navLinkClass}
+          >
             <AudioLines />
             Transcribe
-          </Button>
-          <Button className="w-full justify-start text-muted-foreground" variant="ghost" disabled>
+          </Link>
+          <Link
+            to="/history"
+            activeProps={{ className: "bg-secondary text-secondary-foreground" }}
+            className={navLinkClass}
+          >
             <History />
             History
-          </Button>
+          </Link>
+          <Link
+            to="/models"
+            activeProps={{ className: "bg-secondary text-secondary-foreground" }}
+            className={navLinkClass}
+          >
+            <Box />
+            Models
+          </Link>
         </nav>
 
         <div className="mt-auto p-3">
-          <Button className="w-full justify-start text-muted-foreground" variant="ghost" disabled>
+          <Link
+            to="/settings"
+            activeProps={{ className: "bg-secondary text-secondary-foreground" }}
+            className={navLinkClass}
+          >
             <Settings />
             Settings
-          </Button>
+          </Link>
         </div>
       </aside>
 
