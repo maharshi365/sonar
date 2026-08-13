@@ -27,15 +27,31 @@ const generalSettingsSchema = z.object({
   ttsModel: z.string().default(""),
 })
 
+/** Authentication / credentials. */
+const authSettingsSchema = z.object({
+  /**
+   * Optional Hugging Face access token.
+   *
+   * When set, it is passed to the Rust downloader as a Bearer token to
+   * authenticate model downloads. This is entirely optional — all catalog
+   * models are public — but a token lifts anonymous rate limits and can speed
+   * up downloads. Stored locally in settings.json and never sent anywhere
+   * except huggingface.co.
+   */
+  huggingFaceToken: z.string().default(""),
+})
+
 /** Root settings object persisted to settings.json. */
 export const settingsSchema = z.object({
   // `.prefault({})` lets the whole section be omitted from settings.json while
   // still applying each field's individual default.
   general: generalSettingsSchema.prefault({}),
+  auth: authSettingsSchema.prefault({}),
 })
 
 export type Settings = z.infer<typeof settingsSchema>
 export type GeneralSettings = Settings["general"]
+export type AuthSettings = Settings["auth"]
 
 /**
  * The complete default settings object.

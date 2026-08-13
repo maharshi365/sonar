@@ -1,0 +1,55 @@
+{
+  "catalog_version": 1,
+  "models": [
+    {
+      "id": "whisper-tiny",
+      "name": "Whisper Tiny",
+      "description": "Smallest multilingual model. Fastest, lowest accuracy. Good for quick tests.",
+      "repo_id": "ggerganov/whisper.cpp",
+      "filename": "ggml-tiny.bin",
+      "size_bytes": 77691713,
+      "languages": ["multilingual"],
+      "recommended": false
+    },
+    {
+      "id": "whisper-base",
+      "name": "Whisper Base",
+      "description": "Small multilingual model. A good balance of speed and accuracy for everyday use.",
+      "repo_id": "ggerganov/whisper.cpp",
+      "filename": "ggml-base.bin",
+      "size_bytes": 147951465,
+      "languages": ["multilingual"],
+      "recommended": true
+    },
+    {
+      "id": "whisper-small",
+      "name": "Whisper Small",
+      "description": "Medium multilingual model. More accurate, moderately slower.",
+      "repo_id": "ggerganov/whisper.cpp",
+      "filename": "ggml-small.bin",
+      "size_bytes": 487601967,
+      "languages": ["multilingual"],
+      "recommended": false
+    },
+    {
+      "id": "whisper-medium",
+      "name": "Whisper Medium",
+      "description": "Large multilingual model. High accuracy, slower and heavier on memory.",
+      "repo_id": "ggerganov/whisper.cpp",
+      "filename": "ggml-medium.bin",
+      "size_bytes": 1533763059,
+      "languages": ["multilingual"],
+      "recommended": false
+    },
+    {
+      "id": "whisper-large-v3-turbo",
+      "name": "Whisper Large v3 Turbo",
+      "description": "Latest large model, optimized for speed. Best accuracy for the price of size.",
+      "repo_id": "ggerganov/whisper.cpp",
+      "filename": "ggml-large-v3-turbo.bin",
+      "size_bytes": 1624555275,
+      "languages": ["multilingual"],
+      "recommended": true
+    }
+  ]
+}

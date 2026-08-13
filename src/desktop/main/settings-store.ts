@@ -72,7 +72,7 @@ export async function saveSettings(input: unknown): Promise<Settings> {
   return next
 }
 
-/** Shallow-merge each known top-level section (general, models, ...). */
+/** Shallow-merge each known top-level section (general, auth, ...). */
 function mergeSettings(current: Settings, input: unknown): unknown {
   if (typeof input !== "object" || input === null) return current
 
@@ -80,6 +80,7 @@ function mergeSettings(current: Settings, input: unknown): unknown {
   return {
     ...current,
     general: { ...current.general, ...(asRecord(patch.general)) },
+    auth: { ...current.auth, ...(asRecord(patch.auth)) },
   }
 }
 

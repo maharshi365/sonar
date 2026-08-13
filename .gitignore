@@ -5,3 +5,10 @@ dist/
 *.log
 .DS_Store
 .tanstack/
+
+# Rust / native addon build artifacts
+target/
+src/crates/**/*.node
+# napi-rs generated bindings (regenerated on build)
+src/crates/sonar-core/index.js
+src/crates/sonar-core/index.d.ts

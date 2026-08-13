@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router"
 
+import { AuthSettings } from "@/components/settings/auth-settings"
 import { GeneralSettings } from "@/components/settings/general-settings"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
@@ -18,12 +19,14 @@ function SettingsPage() {
       <Tabs defaultValue="general" className="mt-8">
         <TabsList variant="line" className="w-full justify-start border-b border-border">
           <TabsTrigger value="general">General</TabsTrigger>
-          <TabsTrigger value="models">Models</TabsTrigger>
+          <TabsTrigger value="auth">Auth</TabsTrigger>
         </TabsList>
         <TabsContent value="general" className="min-h-64 pt-6">
           <GeneralSettings />
         </TabsContent>
-        <TabsContent value="models" className="min-h-64 pt-6" />
+        <TabsContent value="auth" className="min-h-64 pt-6">
+          <AuthSettings />
+        </TabsContent>
       </Tabs>
     </>
   )

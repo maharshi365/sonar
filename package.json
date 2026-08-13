@@ -6,12 +6,15 @@
   "main": "./out/main/index.js",
   "scripts": {
     "postinstall": "node node_modules/electron/install.js",
-    "dev": "electron-vite dev --config src/desktop/electron.vite.config.ts",
-    "build": "electron-vite build --config src/desktop/electron.vite.config.ts",
+    "build:native": "npm --prefix src/crates/sonar-core run build",
+    "build:native:debug": "npm --prefix src/crates/sonar-core run build:debug",
+    "dev": "npm run build:native:debug && electron-vite dev --config src/desktop/electron.vite.config.ts",
+    "build": "npm run build:native && electron-vite build --config src/desktop/electron.vite.config.ts",
     "preview": "electron-vite preview --config src/desktop/electron.vite.config.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@sonar/core": "file:src/crates/sonar-core",
     "@base-ui/react": "^1.7.0",
     "@tanstack/react-form": "^1.33.5",
     "@tanstack/react-query": "^5.101.4",
