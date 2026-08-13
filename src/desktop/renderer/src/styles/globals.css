@@ -1,0 +1,64 @@
+@import "tailwindcss";
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --font-sans: "Inter", "Segoe UI", sans-serif;
+}
+
+:root {
+  color-scheme: dark;
+  --background: oklch(0.13 0.018 255);
+  --foreground: oklch(0.96 0.008 255);
+  --card: oklch(0.16 0.02 255);
+  --card-foreground: oklch(0.96 0.008 255);
+  --primary: oklch(0.63 0.2 255);
+  --primary-foreground: oklch(0.98 0.005 255);
+  --secondary: oklch(0.21 0.025 255);
+  --secondary-foreground: oklch(0.94 0.008 255);
+  --muted: oklch(0.2 0.02 255);
+  --muted-foreground: oklch(0.66 0.025 255);
+  --accent: oklch(0.24 0.04 255);
+  --accent-foreground: oklch(0.96 0.008 255);
+  --border: oklch(0.25 0.025 255);
+  --input: oklch(0.27 0.025 255);
+  --ring: oklch(0.63 0.2 255);
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+
+  html,
+  body,
+  #root {
+    min-height: 100%;
+  }
+
+  body {
+    margin: 0;
+    background: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  button,
+  a {
+    -webkit-app-region: no-drag;
+  }
+}
