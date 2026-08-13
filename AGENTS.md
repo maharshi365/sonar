@@ -14,3 +14,7 @@ Cross-platform desktop speech-to-text app. Users press a global shortcut, speak,
 - Make speech models easy to install, select, and hot-swap.
 - Preserve consistent behavior across Windows, macOS, and Linux.
 - Keep the interaction fast, simple, and privacy-focused.
+
+## Workflow
+
+- When using GitHub or other external code as a reference, prefer copying it into the repo first and then modifying it, rather than rewriting it from scratch.
