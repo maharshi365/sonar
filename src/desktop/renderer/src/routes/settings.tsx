@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router"
 
+import { GeneralSettings } from "@/components/settings/general-settings"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
 export const Route = createFileRoute("/settings")({
@@ -19,7 +20,9 @@ function SettingsPage() {
           <TabsTrigger value="general">General</TabsTrigger>
           <TabsTrigger value="models">Models</TabsTrigger>
         </TabsList>
-        <TabsContent value="general" className="min-h-64 pt-6" />
+        <TabsContent value="general" className="min-h-64 pt-6">
+          <GeneralSettings />
+        </TabsContent>
         <TabsContent value="models" className="min-h-64 pt-6" />
       </Tabs>
     </>

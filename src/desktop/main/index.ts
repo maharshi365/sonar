@@ -1,6 +1,8 @@
 import { join } from "node:path"
 import { app, BrowserWindow, Menu, shell } from "electron"
 
+import { registerIpcHandlers } from "./ipc"
+
 function createWindow(): void {
   const window = new BrowserWindow({
     title: "Sonar",
@@ -32,6 +34,7 @@ function createWindow(): void {
 }
 
 void app.whenReady().then(() => {
+  registerIpcHandlers()
   createWindow()
 
   app.on("activate", () => {
