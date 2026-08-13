@@ -9,7 +9,7 @@ export const Route = createFileRoute("/")({
 
 function HomePage() {
   return (
-    <div className="min-h-full w-full px-8 py-10 lg:px-12">
+    <>
       <header>
         <p className="mb-2 text-xs font-medium uppercase tracking-[0.2em] text-primary">Local transcription</p>
         <h1 className="text-3xl font-semibold tracking-tight">Ready when you are.</h1>
@@ -39,6 +39,6 @@ function HomePage() {
         <span className="flex items-center gap-2"><Waves className="size-3.5 text-primary" /> No model installed</span>
         <span className="flex items-center gap-2"><ShieldCheck className="size-3.5" /> Audio stays on this device</span>
       </footer>
-    </div>
+    </>
   )
 }

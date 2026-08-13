@@ -8,7 +8,7 @@ export const Route = createFileRoute("/settings")({
 
 function SettingsPage() {
   return (
-    <div className="min-h-full w-full px-8 py-10 lg:px-12">
+    <>
       <header>
         <h1 className="text-3xl font-semibold tracking-tight">Settings</h1>
         <p className="mt-2 text-sm text-muted-foreground">Configure how Sonar works on this device.</p>
@@ -22,6 +22,6 @@ function SettingsPage() {
         <TabsContent value="general" className="min-h-64 pt-6" />
         <TabsContent value="models" className="min-h-64 pt-6" />
       </Tabs>
-    </div>
+    </>
   )
 }

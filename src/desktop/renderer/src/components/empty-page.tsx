@@ -18,14 +18,12 @@ export function EmptyPage({
   icon: ReactNode
 }) {
   return (
-    <div className="flex min-h-full w-full px-8 py-10 lg:px-12">
-      <Empty className="border bg-card/20">
-        <EmptyHeader>
-          <EmptyMedia variant="icon">{icon}</EmptyMedia>
-          <EmptyTitle>{title}</EmptyTitle>
-          <EmptyDescription>{description}</EmptyDescription>
-        </EmptyHeader>
-      </Empty>
-    </div>
+    <Empty className="min-h-[calc(100vh-5rem)] border bg-card/20">
+      <EmptyHeader>
+        <EmptyMedia variant="icon">{icon}</EmptyMedia>
+        <EmptyTitle>{title}</EmptyTitle>
+        <EmptyDescription>{description}</EmptyDescription>
+      </EmptyHeader>
+    </Empty>
   )
 }
