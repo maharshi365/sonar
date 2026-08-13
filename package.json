@@ -6,9 +6,9 @@
   "main": "./out/main/index.js",
   "scripts": {
     "postinstall": "node node_modules/electron/install.js",
-    "dev": "electron-vite dev",
-    "build": "electron-vite build",
-    "preview": "electron-vite preview",
+    "dev": "electron-vite dev --config src/desktop/electron.vite.config.ts",
+    "build": "electron-vite build --config src/desktop/electron.vite.config.ts",
+    "preview": "electron-vite preview --config src/desktop/electron.vite.config.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

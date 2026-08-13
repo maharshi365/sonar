@@ -20,5 +20,5 @@
       "@/*": ["./src/desktop/renderer/src/*"]
     }
   },
-  "include": ["electron.vite.config.ts", "src/desktop/**/*.ts", "src/desktop/**/*.tsx"]
+  "include": ["src/desktop/**/*.ts", "src/desktop/**/*.tsx"]
 }
