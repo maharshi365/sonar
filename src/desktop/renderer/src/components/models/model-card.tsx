@@ -14,6 +14,15 @@ import {
 import type { ModelStatus } from "../../../../shared/models"
 import type { ModelProgress } from "@/hooks/use-models"
 import { Button } from "@/components/ui/button"
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
 
 function formatBytes(bytes: number): string {
@@ -59,22 +68,22 @@ export function ModelCard({
   const speed = progress ? formatSpeed(progress.bytesPerSecond) : ""
 
   return (
-    <div className="rounded-lg border border-border bg-card/40 p-3">
-      <div className="flex items-start justify-between gap-4">
+    <Card size="sm" className="bg-card/40">
+      <CardHeader>
         <div className="flex min-w-0 gap-2.5">
           <div className="grid size-8 shrink-0 place-items-center rounded-md border border-border bg-secondary text-primary">
             <AudioWaveform className="size-4" />
           </div>
 
           <div className="min-w-0">
-            <h3 className="truncate text-sm font-semibold">{model.name}</h3>
-            <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">
+            <CardTitle className="truncate">{model.name}</CardTitle>
+            <CardDescription className="mt-0.5 line-clamp-1 text-xs">
               {model.description}
-            </p>
+            </CardDescription>
           </div>
         </div>
 
-        <div className="flex shrink-0 items-center gap-2">
+        <CardAction>
           {isDownloading ? (
             <Button size="sm" variant="outline" onClick={onCancel}>
               <X /> Cancel
@@ -88,10 +97,28 @@ export function ModelCard({
               <Download /> Download
             </Button>
           )}
-        </div>
-      </div>
+        </CardAction>
+      </CardHeader>
 
-      <div className="mt-2 flex items-end gap-2">
+      {isDownloading || error ? (
+        <CardContent className="space-y-2">
+          {isDownloading ? (
+            <div className="space-y-1.5">
+              <Progress value={pct} />
+              <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                <span className="inline-flex items-center gap-1">
+                  <Loader2 className="size-3 animate-spin" />
+                  {pct > 0 ? `${pct.toFixed(0)}%` : "Starting…"}
+                </span>
+                {speed ? <span>{speed}</span> : null}
+              </div>
+            </div>
+          ) : null}
+          {error ? <p className="text-[11px] text-destructive">{error}</p> : null}
+        </CardContent>
+      ) : null}
+
+      <CardFooter className="justify-between gap-2 py-2">
         <div className="flex flex-1 flex-wrap items-center gap-2 text-[11px]">
           <span
             className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 font-medium ${
@@ -127,24 +154,7 @@ export function ModelCard({
             <Star className="size-4 fill-primary/20" />
           </span>
         ) : null}
-      </div>
-
-      {isDownloading ? (
-        <div className="mt-3 space-y-1.5">
-          <Progress value={pct} />
-          <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-            <span className="inline-flex items-center gap-1">
-              <Loader2 className="size-3 animate-spin" />
-              {pct > 0 ? `${pct.toFixed(0)}%` : "Starting…"}
-            </span>
-            {speed ? <span>{speed}</span> : null}
-          </div>
-        </div>
-      ) : null}
-
-      {error ? (
-        <p className="mt-2 text-[11px] text-destructive">{error}</p>
-      ) : null}
-    </div>
+      </CardFooter>
+    </Card>
   )
 }
