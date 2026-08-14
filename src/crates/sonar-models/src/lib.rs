@@ -6,6 +6,8 @@
 //! progress is reported through a caller-supplied callback so the higher layer
 //! (napi) can forward it to JavaScript.
 
+mod catalog;
+
 use std::collections::HashMap;
 use std::io::SeekFrom;
 use std::path::{Path, PathBuf};
@@ -17,7 +19,7 @@ use serde::Serialize;
 use tokio::fs::{self, File, OpenOptions};
 use tokio::io::{AsyncSeekExt, AsyncWriteExt};
 
-use crate::catalog::{self, CatalogModel};
+use catalog::CatalogModel;
 
 /// Local, on-disk status of a catalog model.
 #[derive(Debug, Clone, Serialize)]
@@ -89,10 +91,7 @@ impl Manager {
 
     /// List every catalog model annotated with its on-disk status.
     pub fn list(&self) -> Vec<ModelStatus> {
-        catalog::all()
-            .iter()
-            .map(|m| self.status_of(m))
-            .collect()
+        catalog::all().iter().map(|m| self.status_of(m)).collect()
     }
 
     fn status_of(&self, model: &CatalogModel) -> ModelStatus {
@@ -131,8 +130,7 @@ impl Manager {
 
     /// Remove a downloaded model (and any partial) from disk.
     pub async fn remove(&self, model_id: &str) -> DownloadResult<()> {
-        let model = catalog::find(model_id)
-            .ok_or_else(|| format!("unknown model: {model_id}"))?;
+        let model = catalog::find(model_id).ok_or_else(|| format!("unknown model: {model_id}"))?;
 
         let path = self.model_path(model);
         let partial = self.partial_path(model);
@@ -164,8 +162,7 @@ impl Manager {
     where
         F: Fn(DownloadProgress) + Send + 'static,
     {
-        let model = catalog::find(model_id)
-            .ok_or_else(|| format!("unknown model: {model_id}"))?;
+        let model = catalog::find(model_id).ok_or_else(|| format!("unknown model: {model_id}"))?;
 
         let final_path = self.model_path(model);
         let partial_path = self.partial_path(model);
@@ -202,7 +199,14 @@ impl Manager {
         };
 
         let result = self
-            .download_inner(model, &final_path, &partial_path, hf_token, &cancel, on_progress)
+            .download_inner(
+                model,
+                &final_path,
+                &partial_path,
+                hf_token,
+                &cancel,
+                on_progress,
+            )
             .await;
 
         // On cancellation we keep the partial so the user can resume later.
@@ -225,7 +229,10 @@ impl Manager {
         let total = model.size_bytes;
 
         // Resume: how many bytes do we already have?
-        let mut have: u64 = fs::metadata(partial_path).await.map(|m| m.len()).unwrap_or(0);
+        let mut have: u64 = fs::metadata(partial_path)
+            .await
+            .map(|m| m.len())
+            .unwrap_or(0);
         if have > total {
             // Corrupt/oversized partial — start over.
             let _ = fs::remove_file(partial_path).await;
@@ -242,10 +249,7 @@ impl Manager {
         }
         if let Some(token) = hf_token.as_deref() {
             if !token.is_empty() {
-                request = request.header(
-                    reqwest::header::AUTHORIZATION,
-                    format!("Bearer {token}"),
-                );
+                request = request.header(reqwest::header::AUTHORIZATION, format!("Bearer {token}"));
             }
         }
 
@@ -318,7 +322,9 @@ impl Manager {
             }
         }
 
-        file.flush().await.map_err(|e| format!("flush error: {e}"))?;
+        file.flush()
+            .await
+            .map_err(|e| format!("flush error: {e}"))?;
         drop(file);
 
         // Final progress event.

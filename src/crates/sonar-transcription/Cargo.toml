@@ -1,0 +1,23 @@
+[package]
+name = "sonar-transcription"
+version.workspace = true
+edition.workspace = true
+description = "Local speech-to-text inference for Sonar."
+license.workspace = true
+links = "sonar_transcription"
+
+[dependencies]
+log = "0.4"
+transcribe-cpp = { version = "0.1.3", default-features = false }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+transcribe-cpp = { version = "0.1.3", default-features = false, features = ["metal"] }
+
+[target.'cfg(all(windows, target_arch = "x86_64"))'.dependencies]
+transcribe-cpp = { version = "0.1.3", default-features = false, features = ["dynamic-backends", "vulkan"] }
+
+[target.'cfg(all(windows, target_arch = "aarch64"))'.dependencies]
+transcribe-cpp = { version = "0.1.3", default-features = false }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+transcribe-cpp = { version = "0.1.3", default-features = false, features = ["dynamic-backends", "vulkan"] }

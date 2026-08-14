@@ -9,7 +9,7 @@ fn main() {
     // sibling libraries in its own directory (napi build drops the `.node`
     // file in the crate root, right where `stage_transcribe_runtime_libs`
     // below copies them). Windows resolves DLLs via `SetDllDirectory` at
-    // runtime instead (see `init_transcribe_backend` in src/lib.rs); macOS
+    // runtime instead (see `sonar-transcription`); macOS
     // links transcribe-cpp statically via the `metal` feature, so neither
     // step applies there.
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("linux") {
@@ -30,11 +30,11 @@ fn stage_transcribe_runtime_libs() {
     use std::collections::BTreeSet;
     use std::path::PathBuf;
 
-    println!("cargo:rerun-if-env-changed=DEP_TRANSCRIBE_CPP_RUNTIME_DIR");
-    println!("cargo:rerun-if-env-changed=DEP_TRANSCRIBE_CPP_MODULE_DIR");
+    println!("cargo:rerun-if-env-changed=DEP_SONAR_TRANSCRIPTION_RUNTIME_DIR");
+    println!("cargo:rerun-if-env-changed=DEP_SONAR_TRANSCRIPTION_MODULE_DIR");
 
     // Present only in a shared posture. A static build has nothing to ship.
-    let Some(runtime_dir) = std::env::var_os("DEP_TRANSCRIBE_CPP_RUNTIME_DIR") else {
+    let Some(runtime_dir) = std::env::var_os("DEP_SONAR_TRANSCRIPTION_RUNTIME_DIR") else {
         return;
     };
 
@@ -46,7 +46,7 @@ fn stage_transcribe_runtime_libs() {
     // the core libs but zero loadable compute backends.
     let mut dirs = BTreeSet::new();
     dirs.insert(PathBuf::from(runtime_dir));
-    if let Some(module_dir) = std::env::var_os("DEP_TRANSCRIBE_CPP_MODULE_DIR") {
+    if let Some(module_dir) = std::env::var_os("DEP_SONAR_TRANSCRIPTION_MODULE_DIR") {
         dirs.insert(PathBuf::from(module_dir));
     }
 
@@ -107,7 +107,8 @@ fn stage_transcribe_runtime_libs() {
             .and_then(|d| std::fs::metadata(src).map(|s| d.len() == s.len()))
             .unwrap_or(false);
         if !unchanged {
-            std::fs::copy(src, &dest_path).unwrap_or_else(|e| panic!("copy {}: {e}", src.display()));
+            std::fs::copy(src, &dest_path)
+                .unwrap_or_else(|e| panic!("copy {}: {e}", src.display()));
         }
         copied += 1;
     }
@@ -118,7 +119,9 @@ fn stage_transcribe_runtime_libs() {
              compute devices"
         );
     }
-    println!("cargo:warning=Staged {copied} transcribe-cpp runtime library file(s) into crate root");
+    println!(
+        "cargo:warning=Staged {copied} transcribe-cpp runtime library file(s) into crate root"
+    );
 }
 
 /// Split a versioned ELF shared-library name into (stem, version depth):

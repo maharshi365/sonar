@@ -1,0 +1,12 @@
+[package]
+name = "sonar-audio"
+version.workspace = true
+edition.workspace = true
+description = "Microphone capture and audio processing for Sonar."
+license.workspace = true
+
+[dependencies]
+cpal = "0.16.0"
+log = "0.4"
+rubato = "0.16.2"
+rustfft = "6.4.0"

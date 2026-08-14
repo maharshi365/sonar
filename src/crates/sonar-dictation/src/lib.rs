@@ -14,8 +14,8 @@
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use crate::audio::AudioRecorder;
-use crate::transcription::{StreamText, TranscriptionEngine};
+use sonar_audio::AudioRecorder;
+use sonar_transcription::{StreamText, TranscriptionEngine};
 
 /// Callbacks the host (napi layer) supplies for a recording session.
 #[derive(Clone)]

@@ -24,7 +24,7 @@ use cpal::{
     Device, Sample, SizedSample,
 };
 
-use crate::audio::{visualizer::AudioVisualiser, FrameResampler};
+use crate::{visualizer::AudioVisualiser, FrameResampler};
 
 /// Target sample rate for whisper.cpp models.
 pub const WHISPER_SAMPLE_RATE: u32 = 16000;
@@ -104,7 +104,7 @@ impl AudioRecorder {
         let (cmd_tx, cmd_rx) = mpsc::channel::<Cmd>();
         let (init_tx, init_rx) = mpsc::sync_channel::<Result<(), String>>(1);
 
-        let host = crate::audio::get_cpal_host();
+        let host = crate::get_cpal_host();
         let device = match device {
             Some(dev) => dev,
             None => host

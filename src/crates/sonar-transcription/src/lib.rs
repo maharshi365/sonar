@@ -23,6 +23,104 @@ use transcribe_cpp::{Model, RunOptions, Session, StreamOptions};
 
 const FINALIZE_TIMEOUT: Duration = Duration::from_secs(30);
 
+/// Initialize the native inference backend once before loading any model.
+///
+/// Dynamic-backend builds require both compute backend registration and, on
+/// Windows, a DLL search path rooted beside the final addon module.
+pub fn initialize_backend() {
+    static INIT: std::sync::Once = std::sync::Once::new();
+    INIT.call_once(|| {
+        #[cfg(target_os = "windows")]
+        {
+            if let Some(dir) = windows_dll::own_module_dir() {
+                windows_dll::add_search_dir(&dir);
+            } else {
+                log::warn!(
+                    "could not resolve the host module directory; \
+                     transcribe-cpp's backend modules may not be found"
+                );
+            }
+        }
+
+        transcribe_cpp::init_logging();
+        match transcribe_cpp::init_backends_default() {
+            Ok(()) => {
+                let devices = transcribe_cpp::devices();
+                log::info!(
+                    "transcribe-cpp initialized with {} compute device(s): [{}]",
+                    devices.len(),
+                    devices
+                        .iter()
+                        .map(|d| format!("{} ({})", d.name, d.kind))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                );
+            }
+            Err(error) => log::warn!("failed to initialize transcribe-cpp backends: {error}"),
+        }
+    });
+}
+
+#[cfg(target_os = "windows")]
+mod windows_dll {
+    use std::ffi::c_void;
+    use std::os::windows::ffi::{OsStrExt, OsStringExt};
+    use std::path::{Path, PathBuf};
+
+    const GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS: u32 = 0x00000004;
+
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn GetModuleHandleExW(
+            dw_flags: u32,
+            lp_module_name: *const c_void,
+            ph_module: *mut *mut c_void,
+        ) -> i32;
+        fn GetModuleFileNameW(h_module: *mut c_void, lp_filename: *mut u16, n_size: u32) -> u32;
+        fn SetDllDirectoryW(lp_path_name: *const u16) -> i32;
+    }
+
+    pub fn own_module_dir() -> Option<PathBuf> {
+        let marker = own_module_dir as *const () as *const c_void;
+        let mut module: *mut c_void = std::ptr::null_mut();
+        let ok = unsafe {
+            GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS, marker, &mut module)
+        };
+        if ok == 0 || module.is_null() {
+            return None;
+        }
+
+        let mut buffer = vec![0u16; 512];
+        loop {
+            let len =
+                unsafe { GetModuleFileNameW(module, buffer.as_mut_ptr(), buffer.len() as u32) };
+            if len == 0 {
+                return None;
+            }
+            if (len as usize) < buffer.len() - 1 {
+                buffer.truncate(len as usize);
+                break;
+            }
+            buffer.resize(buffer.len() * 2, 0);
+        }
+
+        PathBuf::from(std::ffi::OsString::from_wide(&buffer))
+            .parent()
+            .map(Path::to_path_buf)
+    }
+
+    pub fn add_search_dir(dir: &Path) {
+        let wide: Vec<u16> = dir
+            .as_os_str()
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+        unsafe {
+            SetDllDirectoryW(wide.as_ptr());
+        }
+    }
+}
+
 /// A UI text snapshot forwarded to JS during streaming. `committed` is the
 /// append-only, flicker-free prefix; `tentative` is the volatile suffix the
 /// model may still rewrite.
@@ -136,8 +234,8 @@ impl TranscriptionEngine {
             return Ok(());
         }
 
-        let model = Model::load(model_path)
-            .map_err(|e| format!("failed to load model {model_id}: {e}"))?;
+        let model =
+            Model::load(model_path).map_err(|e| format!("failed to load model {model_id}: {e}"))?;
         let session = model
             .session()
             .map_err(|e| format!("failed to create session for {model_id}: {e}"))?;
@@ -187,11 +285,7 @@ impl TranscriptionEngine {
         thread::spawn(move || engine.run_stream_worker(rx, on_text));
     }
 
-    fn run_stream_worker(
-        &self,
-        rx: mpsc::Receiver<StreamCmd>,
-        on_text: StreamTextCallback,
-    ) {
+    fn run_stream_worker(&self, rx: mpsc::Receiver<StreamCmd>, on_text: StreamTextCallback) {
         // Ensure worker_active is always cleared, even on early return/panic.
         struct ActiveGuard<'a>(&'a AtomicBool);
         impl Drop for ActiveGuard<'_> {
@@ -310,9 +404,9 @@ impl TranscriptionEngine {
         match reply_rx.recv_timeout(FINALIZE_TIMEOUT) {
             Ok(text) => Ok(text),
             Err(mpsc::RecvTimeoutError::Disconnected) => Ok(None),
-            Err(mpsc::RecvTimeoutError::Timeout) => {
-                Err(format!("timed out waiting {FINALIZE_TIMEOUT:?} to finalize"))
-            }
+            Err(mpsc::RecvTimeoutError::Timeout) => Err(format!(
+                "timed out waiting {FINALIZE_TIMEOUT:?} to finalize"
+            )),
         }
     }
 
