@@ -10,12 +10,13 @@
     "build:native:debug": "npm --prefix src/crates/sonar-core run build:debug",
     "dev": "npm run build:native:debug && electron-vite dev --config src/desktop/electron.vite.config.ts",
     "build": "npm run build:native && electron-vite build --config src/desktop/electron.vite.config.ts",
+    "package": "npm run build && electron-builder --publish never",
     "preview": "electron-vite preview --config src/desktop/electron.vite.config.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@sonar/core": "file:src/crates/sonar-core",
     "@base-ui/react": "^1.7.0",
+    "@sonar/core": "file:src/crates/sonar-core",
     "@tanstack/react-form": "^1.33.5",
     "@tanstack/react-query": "^5.101.4",
     "@tanstack/react-router": "^1.170.27",
@@ -37,9 +38,40 @@
     "@types/react-dom": "^19.2.4",
     "@vitejs/plugin-react": "^5.1.1",
     "electron": "^43.4.0",
+    "electron-builder": "^26.15.3",
     "electron-vite": "^5.0.0",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",
     "vite": "^7.3.6"
+  },
+  "build": {
+    "appId": "com.sonar.desktop",
+    "productName": "Sonar",
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "out/**/*",
+      "!node_modules/@sonar/core/target{,/**/*}",
+      "!node_modules/@sonar/core/src{,/**/*}",
+      "!node_modules/@sonar/core/build.rs",
+      "!node_modules/@sonar/core/Cargo.toml",
+      "!node_modules/@sonar/core/package-lock.json"
+    ],
+    "asarUnpack": [
+      "node_modules/@sonar/core/*.node",
+      "node_modules/@sonar/core/*.dll",
+      "node_modules/@sonar/core/*.dylib",
+      "node_modules/@sonar/core/*.so",
+      "node_modules/@sonar/core/*.so.*"
+    ],
+    "mac": {
+      "category": "public.app-category.productivity",
+      "target": "dmg"
+    },
+    "win": {
+      "target": "nsis"
+    }
   }
 }

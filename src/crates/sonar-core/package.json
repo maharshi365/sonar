@@ -5,6 +5,15 @@
   "description": "Rust core native addon for Sonar",
   "main": "index.js",
   "types": "index.d.ts",
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "*.node",
+    "*.dll",
+    "*.dylib",
+    "*.so",
+    "*.so.*"
+  ],
   "napi": {
     "name": "sonar-core",
     "triples": {
