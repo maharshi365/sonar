@@ -15,7 +15,7 @@
 
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::{mpsc, Arc, Mutex, MutexGuard, PoisonError};
 use std::thread;
 use std::time::Duration;
 
@@ -67,7 +67,8 @@ mod windows_dll {
     use std::os::windows::ffi::{OsStrExt, OsStringExt};
     use std::path::{Path, PathBuf};
 
-    const GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS: u32 = 0x00000004;
+    const GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS: u32 = 0x0000_0004;
+    static MODULE_MARKER: u8 = 0;
 
     #[link(name = "kernel32")]
     extern "system" {
@@ -81,10 +82,14 @@ mod windows_dll {
     }
 
     pub fn own_module_dir() -> Option<PathBuf> {
-        let marker = own_module_dir as *const () as *const c_void;
+        let marker = std::ptr::from_ref(&MODULE_MARKER).cast::<c_void>();
         let mut module: *mut c_void = std::ptr::null_mut();
         let ok = unsafe {
-            GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS, marker, &mut module)
+            GetModuleHandleExW(
+                GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS,
+                marker,
+                &raw mut module,
+            )
         };
         if ok == 0 || module.is_null() {
             return None;
@@ -92,16 +97,17 @@ mod windows_dll {
 
         let mut buffer = vec![0u16; 512];
         loop {
-            let len =
-                unsafe { GetModuleFileNameW(module, buffer.as_mut_ptr(), buffer.len() as u32) };
+            let capacity = u32::try_from(buffer.len()).ok()?;
+            let len = unsafe { GetModuleFileNameW(module, buffer.as_mut_ptr(), capacity) };
             if len == 0 {
                 return None;
             }
-            if (len as usize) < buffer.len() - 1 {
-                buffer.truncate(len as usize);
+            let len = usize::try_from(len).ok()?;
+            if len < buffer.len().saturating_sub(1) {
+                buffer.truncate(len);
                 break;
             }
-            buffer.resize(buffer.len() * 2, 0);
+            buffer.resize(buffer.len().checked_mul(2)?, 0);
         }
 
         PathBuf::from(std::ffi::OsString::from_wide(&buffer))
@@ -143,6 +149,7 @@ enum StreamCmd {
 
 /// Routes real-time audio frames to the active streaming worker. The audio
 /// recorder holds an `Arc<StreamRouter>` and calls [`StreamRouter::feed`] for
+///
 /// every 16 kHz frame; when no stream is open that's a single relaxed atomic
 /// load.
 pub struct StreamRouter {
@@ -151,7 +158,7 @@ pub struct StreamRouter {
 }
 
 impl StreamRouter {
-    fn new() -> Self {
+    const fn new() -> Self {
         Self {
             tx: Mutex::new(None),
             open: AtomicBool::new(false),
@@ -160,19 +167,19 @@ impl StreamRouter {
 
     fn open(&self) -> mpsc::Receiver<StreamCmd> {
         let (tx, rx) = mpsc::channel::<StreamCmd>();
-        *self.tx.lock().unwrap() = Some(tx);
+        *lock(&self.tx) = Some(tx);
         self.open.store(true, Ordering::Relaxed);
         rx
     }
 
     fn take(&self) -> Option<mpsc::Sender<StreamCmd>> {
         self.open.store(false, Ordering::Relaxed);
-        self.tx.lock().unwrap().take()
+        lock(&self.tx).take()
     }
 
     fn clear(&self) {
         self.open.store(false, Ordering::Relaxed);
-        *self.tx.lock().unwrap() = None;
+        *lock(&self.tx) = None;
     }
 
     /// Forward a 16 kHz frame to the active worker. Cheap no-op when idle.
@@ -180,18 +187,19 @@ impl StreamRouter {
         if !self.open.load(Ordering::Relaxed) {
             return;
         }
-        if let Some(tx) = self.tx.lock().unwrap().as_ref() {
+        if let Some(tx) = lock(&self.tx).as_ref() {
             let _ = tx.send(StreamCmd::Feed(frame.to_vec()));
         }
     }
 
+    /// Return whether a streaming worker currently accepts audio.
+    #[must_use]
     pub fn is_open(&self) -> bool {
         self.open.load(Ordering::Relaxed)
     }
 }
 
 /// Owns the resident model session and manages streaming lifecycles.
-#[allow(dead_code)]
 pub struct TranscriptionEngine {
     /// The loaded session, taken out of the mutex while a stream worker owns it.
     session: Mutex<Option<Session>>,
@@ -202,6 +210,8 @@ pub struct TranscriptionEngine {
 }
 
 impl TranscriptionEngine {
+    /// Create an engine without a loaded model.
+    #[must_use]
     pub fn new() -> Self {
         Self {
             session: Mutex::new(None),
@@ -213,24 +223,31 @@ impl TranscriptionEngine {
 
     /// The shared frame router. Hand this to the audio recorder's frame
     /// callback so live audio reaches the streaming worker.
+    #[must_use]
     pub fn router(&self) -> Arc<StreamRouter> {
         Arc::clone(&self.router)
     }
 
+    /// Return whether a model is loaded or owned by an active worker.
+    #[must_use]
     pub fn is_model_loaded(&self) -> bool {
-        self.session.lock().unwrap().is_some() || self.worker_active.load(Ordering::Acquire)
+        lock(&self.session).is_some() || self.worker_active.load(Ordering::Acquire)
     }
 
+    /// Return the identifier of the resident model, if any.
+    #[must_use]
     pub fn current_model_id(&self) -> Option<String> {
-        self.current_model.lock().unwrap().clone()
+        lock(&self.current_model).clone()
     }
 
     /// Load a GGUF/ggml model, replacing any currently loaded one. Idempotent:
     /// a no-op when `model_id` is already loaded.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the model or its inference session cannot be loaded.
     pub fn load_model(&self, model_id: &str, model_path: &Path) -> Result<(), String> {
-        if self.current_model.lock().unwrap().as_deref() == Some(model_id)
-            && self.session.lock().unwrap().is_some()
-        {
+        if lock(&self.current_model).as_deref() == Some(model_id) && lock(&self.session).is_some() {
             return Ok(());
         }
 
@@ -242,31 +259,28 @@ impl TranscriptionEngine {
 
         let caps = session.model().capabilities();
         log::info!(
-            "Loaded model '{}' (streaming={}, translate={}, langs={})",
-            model_id,
+            "Loaded model '{model_id}' (streaming={}, translate={}, langs={})",
             caps.supports_streaming,
             caps.supports_translate,
             caps.languages.len()
         );
 
-        *self.session.lock().unwrap() = Some(session);
-        *self.current_model.lock().unwrap() = Some(model_id.to_string());
+        *lock(&self.session) = Some(session);
+        *lock(&self.current_model) = Some(model_id.to_owned());
         Ok(())
     }
 
     pub fn unload_model(&self) {
-        *self.session.lock().unwrap() = None;
-        *self.current_model.lock().unwrap() = None;
+        *lock(&self.session) = None;
+        *lock(&self.current_model) = None;
     }
 
     /// Whether the loaded model advertises live streaming.
+    #[must_use]
     pub fn supports_streaming(&self) -> bool {
-        self.session
-            .lock()
-            .unwrap()
+        lock(&self.session)
             .as_ref()
-            .map(|s| s.model().capabilities().supports_streaming)
-            .unwrap_or(false)
+            .is_some_and(|session| session.model().capabilities().supports_streaming)
     }
 
     /// Begin a streaming session. Spawns a worker that takes the session out of
@@ -282,10 +296,10 @@ impl TranscriptionEngine {
         }
         let rx = self.router.open();
         let engine = Arc::clone(self);
-        thread::spawn(move || engine.run_stream_worker(rx, on_text));
+        let _worker = thread::spawn(move || engine.run_stream_worker(&rx, &on_text));
     }
 
-    fn run_stream_worker(&self, rx: mpsc::Receiver<StreamCmd>, on_text: StreamTextCallback) {
+    fn run_stream_worker(&self, rx: &mpsc::Receiver<StreamCmd>, on_text: &StreamTextCallback) {
         // Ensure worker_active is always cleared, even on early return/panic.
         struct ActiveGuard<'a>(&'a AtomicBool);
         impl Drop for ActiveGuard<'_> {
@@ -298,14 +312,11 @@ impl TranscriptionEngine {
         let model_id = self.current_model_id().unwrap_or_default();
 
         // Take the session out so we own it for the stream's lifetime.
-        let mut session = match self.session.lock().unwrap().take() {
-            Some(s) => s,
-            None => {
-                log::info!("Live preview: no model loaded; falling back to batch");
-                self.router.clear();
-                drain_until_finalize(rx);
-                return;
-            }
+        let Some(mut session) = lock(&self.session).take() else {
+            log::info!("Live preview: no model loaded; falling back to batch");
+            self.router.clear();
+            drain_until_finalize(rx);
+            return;
         };
 
         let supports_streaming = session.model().capabilities().supports_streaming;
@@ -382,10 +393,9 @@ impl TranscriptionEngine {
     }
 
     fn return_session(&self, session: Session, expected_model_id: &str) {
-        let still_current =
-            self.current_model.lock().unwrap().as_deref() == Some(expected_model_id);
+        let still_current = lock(&self.current_model).as_deref() == Some(expected_model_id);
         if still_current {
-            *self.session.lock().unwrap() = Some(session);
+            *lock(&self.session) = Some(session);
         } else {
             log::info!("Model changed during stream; dropping stale session");
         }
@@ -393,6 +403,11 @@ impl TranscriptionEngine {
 
     /// Flush the active stream and return its final text. `Ok(None)` means no
     /// usable stream ran (caller should fall back to batch).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the streaming worker does not finalize before the
+    /// timeout.
     pub fn finalize_stream(&self) -> Result<Option<String>, String> {
         let Some(tx) = self.router.take() else {
             return Ok(None);
@@ -419,15 +434,18 @@ impl TranscriptionEngine {
 
     /// Batch transcription over a full 16 kHz mono buffer. Used as the fallback
     /// when the model doesn't support streaming.
-    pub fn transcribe(&self, audio: Vec<f32>) -> Result<String, String> {
-        let mut guard = self.session.lock().unwrap();
-        let session = guard
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if no model is loaded or inference fails.
+    pub fn transcribe(&self, audio: &[f32]) -> Result<String, String> {
+        let result = lock(&self.session)
             .as_mut()
-            .ok_or_else(|| "no model loaded".to_string())?;
-        let result = session
-            .run(&audio, &RunOptions::default())
-            .map_err(|e| format!("transcription failed: {e}"))?;
-        Ok(result.text)
+            .ok_or_else(|| "no model loaded".to_owned())?
+            .run(audio, &RunOptions::default());
+        result
+            .map(|transcription| transcription.text)
+            .map_err(|e| format!("transcription failed: {e}"))
     }
 }
 
@@ -439,7 +457,7 @@ impl Default for TranscriptionEngine {
 
 /// Drain the command channel until finalize/cancel so the caller's handshake
 /// completes even when no stream ran.
-fn drain_until_finalize(rx: mpsc::Receiver<StreamCmd>) {
+fn drain_until_finalize(rx: &mpsc::Receiver<StreamCmd>) {
     while let Ok(cmd) = rx.recv() {
         match cmd {
             StreamCmd::Finalize(reply) => {
@@ -450,4 +468,8 @@ fn drain_until_finalize(rx: mpsc::Receiver<StreamCmd>) {
             StreamCmd::Feed(_) => {}
         }
     }
+}
+
+fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }

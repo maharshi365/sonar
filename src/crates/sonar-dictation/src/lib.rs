@@ -12,7 +12,7 @@
 //! One pipeline instance lives for the whole process (see the napi layer).
 
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use sonar_audio::AudioRecorder;
 use sonar_transcription::{StreamText, TranscriptionEngine};
@@ -21,9 +21,13 @@ use sonar_transcription::{StreamText, TranscriptionEngine};
 #[derive(Clone)]
 pub struct SessionCallbacks {
     pub on_text: Arc<dyn Fn(StreamText) + Send + Sync + 'static>,
-    pub on_level: Arc<dyn Fn(Vec<f32>) + Send + Sync + 'static>,
+    pub on_level: AudioLevelCallback,
 }
 
+/// Callback invoked with the current audio spectrum levels.
+pub type AudioLevelCallback = Arc<dyn Fn(Vec<f32>) + Send + Sync + 'static>;
+
+/// Coordinates microphone capture with the resident transcription engine.
 pub struct Pipeline {
     engine: Arc<TranscriptionEngine>,
     recorder: Mutex<Option<AudioRecorder>>,
@@ -32,6 +36,8 @@ pub struct Pipeline {
 }
 
 impl Pipeline {
+    /// Create an idle dictation pipeline.
+    #[must_use]
     pub fn new() -> Self {
         Self {
             engine: Arc::new(TranscriptionEngine::new()),
@@ -43,18 +49,27 @@ impl Pipeline {
 
     /// Set the directory model files live in. Required before `start`.
     pub fn set_models_dir(&self, dir: PathBuf) {
-        *self.models_dir.lock().unwrap() = Some(dir);
+        *lock(&self.models_dir) = Some(dir);
     }
 
+    /// Return whether the pipeline is currently recording.
+    #[must_use]
     pub fn is_recording(&self) -> bool {
-        *self.recording.lock().unwrap()
+        *lock(&self.recording)
     }
 
+    /// Return the identifier of the resident model, if any.
+    #[must_use]
     pub fn current_model_id(&self) -> Option<String> {
         self.engine.current_model_id()
     }
 
     /// Preload a model without recording (e.g. when the user picks one).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the models directory is unset, the model file is
+    /// missing, or the transcription engine cannot load the model.
     pub fn load_model(&self, model_id: &str, filename: &str) -> Result<(), String> {
         let path = self.model_path(filename)?;
         self.engine.load_model(model_id, &path)
@@ -65,12 +80,9 @@ impl Pipeline {
     }
 
     fn model_path(&self, filename: &str) -> Result<PathBuf, String> {
-        let dir = self
-            .models_dir
-            .lock()
-            .unwrap()
+        let dir = lock(&self.models_dir)
             .clone()
-            .ok_or_else(|| "models directory not set".to_string())?;
+            .ok_or_else(|| "models directory not set".to_owned())?;
         let path = dir.join(filename);
         if !path.exists() {
             return Err(format!("model file not found: {}", path.display()));
@@ -83,16 +95,21 @@ impl Pipeline {
     /// Loads `model_id` (file `filename`) if not already resident, opens the
     /// microphone, and starts streaming. Live text and audio levels flow to the
     /// provided callbacks until [`Pipeline::stop`] is called.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when a recording is already active or when model
+    /// loading or microphone startup fails.
     pub fn start(
         &self,
         model_id: &str,
         filename: &str,
-        callbacks: SessionCallbacks,
+        callbacks: &SessionCallbacks,
     ) -> Result<(), String> {
         {
-            let mut recording = self.recording.lock().unwrap();
+            let mut recording = lock(&self.recording);
             if *recording {
-                return Err("already recording".to_string());
+                return Err("already recording".to_owned());
             }
             *recording = true;
         }
@@ -100,7 +117,7 @@ impl Pipeline {
         // On any early error, clear the recording flag.
         let result = self.start_inner(model_id, filename, callbacks);
         if result.is_err() {
-            *self.recording.lock().unwrap() = false;
+            *lock(&self.recording) = false;
         }
         result
     }
@@ -109,7 +126,7 @@ impl Pipeline {
         &self,
         model_id: &str,
         filename: &str,
-        callbacks: SessionCallbacks,
+        callbacks: &SessionCallbacks,
     ) -> Result<(), String> {
         let path = self.model_path(filename)?;
         self.engine.load_model(model_id, &path)?;
@@ -136,7 +153,7 @@ impl Pipeline {
         // Wait until the first mic sample flows so the caller knows capture began.
         let _ = ready.recv();
 
-        *self.recorder.lock().unwrap() = Some(recorder);
+        *lock(&self.recorder) = Some(recorder);
         Ok(())
     }
 
@@ -144,16 +161,21 @@ impl Pipeline {
     ///
     /// Finalizes the live stream; if the model couldn't stream, runs a batch
     /// pass over the captured audio instead.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if no recording is active, capture cannot stop, stream
+    /// finalization fails, or fallback batch transcription fails.
     pub fn stop(&self) -> Result<String, String> {
         {
-            let mut recording = self.recording.lock().unwrap();
+            let mut recording = lock(&self.recording);
             if !*recording {
-                return Err("not recording".to_string());
+                return Err("not recording".to_owned());
             }
             *recording = false;
         }
 
-        let recorder = self.recorder.lock().unwrap().take();
+        let recorder = lock(&self.recorder).take();
         let samples = match recorder {
             Some(mut rec) => {
                 let samples = rec
@@ -166,26 +188,32 @@ impl Pipeline {
         };
 
         // Prefer the streamed result; fall back to batch when no stream ran.
-        match self.engine.finalize_stream()? {
-            Some(text) => Ok(text),
-            None => {
+        self.engine.finalize_stream()?.map_or_else(
+            || {
                 if samples.is_empty() {
-                    return Ok(String::new());
+                    Ok(String::new())
+                } else {
+                    self.engine.transcribe(&samples)
                 }
-                self.engine.transcribe(samples)
-            }
-        }
+            },
+            Ok,
+        )
     }
 
     /// Cancel an in-flight recording, discarding any transcript.
     pub fn cancel(&self) {
-        *self.recording.lock().unwrap() = false;
-        if let Some(mut rec) = self.recorder.lock().unwrap().take() {
+        *lock(&self.recording) = false;
+        let recorder = lock(&self.recorder).take();
+        if let Some(mut rec) = recorder {
             let _ = rec.stop();
             let _ = rec.close();
         }
         self.engine.cancel_stream();
     }
+}
+
+fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
 impl Default for Pipeline {

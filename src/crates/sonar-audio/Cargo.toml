@@ -5,8 +5,12 @@ edition.workspace = true
 description = "Microphone capture and audio processing for Sonar."
 license.workspace = true
 
+[lints]
+workspace = true
+
 [dependencies]
 cpal = "0.16.0"
 log = "0.4"
+num-traits = "0.2"
 rubato = "0.16.2"
 rustfft = "6.4.0"

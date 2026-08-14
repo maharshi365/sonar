@@ -18,6 +18,7 @@ pub use resampler::FrameResampler;
 
 /// Returns the appropriate cpal host for the current platform. On Linux, prefer
 /// the ALSA host; elsewhere use the default.
+#[must_use]
 pub fn get_cpal_host() -> cpal::Host {
     #[cfg(target_os = "linux")]
     {

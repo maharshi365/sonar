@@ -5,7 +5,6 @@
 //! always present with zero network access. Each entry points at a public
 //! Hugging Face repo + filename that can be downloaded on demand.
 
-use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 
 /// A single downloadable model as described by the bundled catalog.
@@ -29,24 +28,19 @@ pub struct CatalogModel {
 
 #[derive(Debug, Deserialize)]
 struct CatalogRoot {
-    #[allow(dead_code)]
-    catalog_version: u32,
+    #[serde(rename = "catalog_version")]
+    _catalog_version: u32,
     models: Vec<CatalogModel>,
 }
 
-static ROOT: Lazy<CatalogRoot> = Lazy::new(|| {
-    serde_json::from_str(include_str!("../catalog.json"))
-        .expect("bundled catalog.json is valid and matches the schema")
-});
-
-/// All models in the bundled catalog.
-pub fn all() -> &'static [CatalogModel] {
-    &ROOT.models
+/// Parse the models compiled into the application.
+pub fn load() -> Result<Vec<CatalogModel>, serde_json::Error> {
+    serde_json::from_str::<CatalogRoot>(include_str!("../catalog.json")).map(|root| root.models)
 }
 
 /// Look up a single model by id.
-pub fn find(id: &str) -> Option<&'static CatalogModel> {
-    ROOT.models.iter().find(|m| m.id == id)
+pub fn find<'a>(models: &'a [CatalogModel], id: &str) -> Option<&'a CatalogModel> {
+    models.iter().find(|m| m.id == id)
 }
 
 /// Build the Hugging Face download URL for a catalog model.

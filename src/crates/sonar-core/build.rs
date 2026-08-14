@@ -1,6 +1,6 @@
 extern crate napi_build;
 
-fn main() {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     napi_build::setup();
 
     // Linux ships transcribe-cpp as a shared libtranscribe + dlopen'd ggml
@@ -16,18 +16,18 @@ fn main() {
         println!("cargo:rustc-link-arg=-Wl,-rpath,$ORIGIN");
     }
 
-    stage_transcribe_runtime_libs();
+    stage_transcribe_runtime_libs()
 }
 
 /// Copy transcribe-cpp's shared runtime libraries (and the dlopen'd ggml
 /// backend modules) into the crate root, next to where `napi build` places
 /// the compiled `.node` addon. Self-gates on the shared / dynamic-backends
-/// posture used by Windows x86_64 and Linux; it's a no-op for the static
+/// posture used by Windows `x86_64` and Linux; it's a no-op for the static
 /// macOS `metal` build, where there is nothing to ship.
 ///
 /// Ported from Handy's `stage_transcribe_runtime_libs` (src-tauri/build.rs).
-fn stage_transcribe_runtime_libs() {
-    use std::collections::BTreeSet;
+fn stage_transcribe_runtime_libs() -> Result<(), Box<dyn std::error::Error>> {
+    use std::collections::{BTreeMap, BTreeSet};
     use std::path::PathBuf;
 
     println!("cargo:rerun-if-env-changed=DEP_SONAR_TRANSCRIPTION_RUNTIME_DIR");
@@ -35,7 +35,7 @@ fn stage_transcribe_runtime_libs() {
 
     // Present only in a shared posture. A static build has nothing to ship.
     let Some(runtime_dir) = std::env::var_os("DEP_SONAR_TRANSCRIPTION_RUNTIME_DIR") else {
-        return;
+        return Ok(());
     };
 
     // transcribe-cpp publishes its runtime layout in up to two directories:
@@ -54,24 +54,23 @@ fn stage_transcribe_runtime_libs() {
     // `.node` file and `index.js`. Keeping the libs here (rather than a
     // `transcribe-libs/` subfolder) means the rpath / SetDllDirectory target
     // is simply "wherever the addon itself lives", dev or packaged.
-    let dest = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
+    let dest = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR")?);
 
-    let mut libs: std::collections::BTreeMap<String, PathBuf> = Default::default();
+    let mut libs = BTreeMap::<String, PathBuf>::default();
     for dir in &dirs {
         println!("cargo:rerun-if-changed={}", dir.display());
-        for entry in std::fs::read_dir(dir)
-            .unwrap_or_else(|e| panic!("read {}: {e}", dir.display()))
-            .flatten()
-        {
+        for entry in std::fs::read_dir(dir)? {
+            let entry = entry?;
             let src = entry.path();
             let name = src.file_name().and_then(|s| s.to_str()).unwrap_or("");
             // Match by NAME, not extension: Linux versions its libs
             // (libtranscribe.so.0, .so.0.1.3), so an extension-only filter
             // would miss the versioned names entirely.
-            let is_lib = name.ends_with(".dll")
-                || name.ends_with(".dylib")
-                || name.ends_with(".so")
-                || name.contains(".so.");
+            let is_lib = src.extension().is_some_and(|extension| {
+                extension.eq_ignore_ascii_case("dll")
+                    || extension.eq_ignore_ascii_case("dylib")
+                    || extension.eq_ignore_ascii_case("so")
+            }) || name.contains(".so.");
             if is_lib {
                 libs.insert(name.to_string(), src);
             }
@@ -83,11 +82,18 @@ fn stage_transcribe_runtime_libs() {
     // (`libfoo.so.N`) for core libs (what NEEDED entries reference), the bare
     // unversioned name for the dlopen'd ggml modules — to avoid triplicating
     // each lib on disk. `fs::copy` dereferences the symlink either way.
-    let mut best: std::collections::BTreeMap<&str, (&str, &PathBuf, usize)> = Default::default();
+    let mut best = BTreeMap::<&str, (&str, &PathBuf, usize)>::default();
     for (name, src) in &libs {
         let (stem, rank) = match split_versioned_so(name) {
             None => (name.as_str(), 0), // Windows/macOS: unversioned, keep as-is.
-            Some((stem, depth)) => (stem, if depth == 1 { 0 } else { depth + 1 }),
+            Some((stem, depth)) => (
+                stem,
+                if depth == 1 {
+                    0
+                } else {
+                    depth.saturating_add(1)
+                },
+            ),
         };
         match best.get(stem) {
             Some(&(_, _, existing)) if existing <= rank => {}
@@ -97,7 +103,15 @@ fn stage_transcribe_runtime_libs() {
         }
     }
 
-    let mut copied = 0usize;
+    if best.is_empty() {
+        return Err(std::io::Error::other(format!(
+            "no transcribe-cpp runtime libraries found under {dirs:?}; a shared / \
+             dynamic-backends build must ship them or the app registers zero \
+             compute devices"
+        ))
+        .into());
+    }
+
     for &(name, src, _) in best.values() {
         let dest_path = dest.join(name);
         // Skip the copy if the destination is already byte-identical — avoids
@@ -107,21 +121,14 @@ fn stage_transcribe_runtime_libs() {
             .and_then(|d| std::fs::metadata(src).map(|s| d.len() == s.len()))
             .unwrap_or(false);
         if !unchanged {
-            std::fs::copy(src, &dest_path)
-                .unwrap_or_else(|e| panic!("copy {}: {e}", src.display()));
+            std::fs::copy(src, &dest_path)?;
         }
-        copied += 1;
     }
-    if copied == 0 {
-        panic!(
-            "no transcribe-cpp runtime libraries found under {dirs:?}; a shared / \
-             dynamic-backends build must ship them or the app registers zero \
-             compute devices"
-        );
-    }
+    let copied = best.len();
     println!(
         "cargo:warning=Staged {copied} transcribe-cpp runtime library file(s) into crate root"
     );
+    Ok(())
 }
 
 /// Split a versioned ELF shared-library name into (stem, version depth):
@@ -129,8 +136,7 @@ fn stage_transcribe_runtime_libs() {
 /// `libfoo.so.0.1.3` -> ("libfoo", 3). Returns None for names that aren't a
 /// `.so` optionally followed by dot-separated numeric components.
 fn split_versioned_so(name: &str) -> Option<(&str, usize)> {
-    let idx = name.find(".so")?;
-    let (stem, rest) = (&name[..idx], &name[idx + 3..]);
+    let (stem, rest) = name.split_once(".so")?;
     if rest.is_empty() {
         return Some((stem, 0));
     }

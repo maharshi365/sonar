@@ -55,24 +55,32 @@ pub type DownloadResult<T> = Result<T, String>;
 /// Tracks in-flight downloads so we can report status and cancel them.
 #[derive(Default)]
 struct Registry {
-    /// model_id -> cancel flag. Set to true to request cancellation.
+    /// `model_id` -> cancel flag. Set to true to request cancellation.
     downloading: HashMap<String, Arc<AtomicBool>>,
 }
 
 /// The download manager owns the models directory and the in-flight registry.
 pub struct Manager {
     models_dir: PathBuf,
+    models: Vec<CatalogModel>,
     registry: Mutex<Registry>,
 }
 
 impl Manager {
     /// Create a manager rooted at `models_dir`, creating the directory if
     /// needed.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the bundled catalog is invalid or the models
+    /// directory cannot be created.
     pub fn new(models_dir: PathBuf) -> DownloadResult<Self> {
+        let models = catalog::load().map_err(|e| format!("invalid bundled model catalog: {e}"))?;
         std::fs::create_dir_all(&models_dir)
             .map_err(|e| format!("failed to create models dir: {e}"))?;
         Ok(Self {
             models_dir,
+            models,
             registry: Mutex::new(Registry::default()),
         })
     }
@@ -86,12 +94,16 @@ impl Manager {
     }
 
     fn is_downloading(&self, id: &str) -> bool {
-        self.registry.lock().unwrap().downloading.contains_key(id)
+        self.registry
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .downloading
+            .contains_key(id)
     }
 
     /// List every catalog model annotated with its on-disk status.
     pub fn list(&self) -> Vec<ModelStatus> {
-        catalog::all().iter().map(|m| self.status_of(m)).collect()
+        self.models.iter().map(|m| self.status_of(m)).collect()
     }
 
     fn status_of(&self, model: &CatalogModel) -> ModelStatus {
@@ -119,18 +131,25 @@ impl Manager {
     /// Request cancellation of an in-flight download. Returns true if a
     /// download was actually in flight.
     pub fn cancel(&self, model_id: &str) -> bool {
-        let reg = self.registry.lock().unwrap();
-        if let Some(flag) = reg.downloading.get(model_id) {
+        let reg = self
+            .registry
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        reg.downloading.get(model_id).is_some_and(|flag| {
             flag.store(true, Ordering::SeqCst);
             true
-        } else {
-            false
-        }
+        })
     }
 
     /// Remove a downloaded model (and any partial) from disk.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for an unknown model or when the downloaded model
+    /// cannot be removed.
     pub async fn remove(&self, model_id: &str) -> DownloadResult<()> {
-        let model = catalog::find(model_id).ok_or_else(|| format!("unknown model: {model_id}"))?;
+        let model = catalog::find(&self.models, model_id)
+            .ok_or_else(|| format!("unknown model: {model_id}"))?;
 
         let path = self.model_path(model);
         let partial = self.partial_path(model);
@@ -153,6 +172,11 @@ impl Manager {
     ///
     /// Resumes from a `.partial` file when one is present. On success the
     /// partial is atomically renamed to the final filename.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for an unknown model, a duplicate or cancelled
+    /// download, network failures, or filesystem failures.
     pub async fn download<F>(
         &self,
         model_id: &str,
@@ -162,7 +186,8 @@ impl Manager {
     where
         F: Fn(DownloadProgress) + Send + 'static,
     {
-        let model = catalog::find(model_id).ok_or_else(|| format!("unknown model: {model_id}"))?;
+        let model = catalog::find(&self.models, model_id)
+            .ok_or_else(|| format!("unknown model: {model_id}"))?;
 
         let final_path = self.model_path(model);
         let partial_path = self.partial_path(model);
@@ -185,7 +210,10 @@ impl Manager {
         // Register the in-flight download with a fresh cancel flag.
         let cancel = Arc::new(AtomicBool::new(false));
         {
-            let mut reg = self.registry.lock().unwrap();
+            let mut reg = self
+                .registry
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             if reg.downloading.contains_key(model_id) {
                 return Err(format!("{model_id} is already downloading"));
             }
@@ -308,7 +336,11 @@ impl Manager {
             file.write_all(&chunk)
                 .await
                 .map_err(|e| format!("write error: {e}"))?;
-            downloaded += chunk.len() as u64;
+            let chunk_len = u64::try_from(chunk.len())
+                .map_err(|e| format!("download chunk size is invalid: {e}"))?;
+            downloaded = downloaded
+                .checked_add(chunk_len)
+                .ok_or_else(|| "downloaded byte count overflowed".to_string())?;
 
             // Throttle progress emission to ~10/sec, but always emit the last.
             if last_emit.elapsed().as_millis() >= 100 {
@@ -348,8 +380,14 @@ fn pct(downloaded: u64, total: u64) -> f64 {
     if total == 0 {
         0.0
     } else {
-        (downloaded as f64 / total as f64) * 100.0
+        (u64_to_f64(downloaded) / u64_to_f64(total)) * 100.0
     }
+}
+
+fn u64_to_f64(value: u64) -> f64 {
+    let high = u32::try_from(value >> u32::BITS).unwrap_or(u32::MAX);
+    let low = u32::try_from(value & u64::from(u32::MAX)).unwrap_or(u32::MAX);
+    f64::from(high).mul_add(4_294_967_296.0, f64::from(low))
 }
 
 /// Deregisters an in-flight download when dropped (success, error, or panic).
@@ -360,8 +398,10 @@ struct InFlightGuard<'a> {
 
 impl Drop for InFlightGuard<'_> {
     fn drop(&mut self) {
-        if let Ok(mut reg) = self.registry.lock() {
-            reg.downloading.remove(&self.model_id);
-        }
+        self.registry
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .downloading
+            .remove(&self.model_id);
     }
 }

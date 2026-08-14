@@ -16,7 +16,7 @@ use std::{
         atomic::{AtomicBool, Ordering},
         mpsc, Arc, Mutex,
     },
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 use cpal::{
@@ -32,7 +32,7 @@ pub const WHISPER_SAMPLE_RATE: u32 = 16000;
 enum Cmd {
     /// Begin capturing. Carries a one-shot acknowledgement sent only after the
     /// first microphone sample chunk is processed.
-    Start(Instant, mpsc::Sender<()>),
+    Start(mpsc::Sender<()>),
     Stop(mpsc::Sender<Vec<f32>>),
     Shutdown,
 }
@@ -60,8 +60,13 @@ pub struct AudioRecorder {
 }
 
 impl AudioRecorder {
+    /// Creates an audio recorder without opening a device.
+    ///
+    /// # Errors
+    ///
+    /// Reserved for recorder initialization failures.
     pub fn new() -> Result<Self, Box<dyn std::error::Error>> {
-        Ok(AudioRecorder {
+        Ok(Self {
             device: None,
             cmd_tx: None,
             worker_handle: None,
@@ -72,6 +77,7 @@ impl AudioRecorder {
         })
     }
 
+    #[must_use]
     pub fn with_level_callback<F>(mut self, cb: F) -> Self
     where
         F: Fn(Vec<f32>) + Send + Sync + 'static,
@@ -83,6 +89,7 @@ impl AudioRecorder {
     /// Register a callback that receives real-time 16 kHz frames while
     /// recording. Frames arrive in real time, in order, on the recorder's
     /// consumer thread.
+    #[must_use]
     pub fn with_audio_callback<F>(mut self, cb: F) -> Self
     where
         F: Fn(&[f32]) + Send + Sync + 'static,
@@ -91,6 +98,12 @@ impl AudioRecorder {
         self
     }
 
+    /// Opens the selected input device and starts its capture worker.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if no input device exists or the device stream cannot
+    /// be configured, built, or started.
     pub fn open(&mut self, device: Option<Device>) -> Result<(), Box<dyn std::error::Error>> {
         if self.worker_handle.is_some() {
             if !self.is_capture_worker_dead() {
@@ -120,112 +133,31 @@ impl AudioRecorder {
 
         let worker = std::thread::spawn(move || {
             let stop_flag = Arc::new(AtomicBool::new(false));
-            let stop_flag_for_stream = stop_flag.clone();
-            let init_result = (|| -> Result<(cpal::Stream, u32), String> {
-                let device_name = thread_device.name().unwrap_or_default();
-                let cached_config = config_cache
-                    .lock()
-                    .unwrap()
-                    .as_ref()
-                    .filter(|(name, _)| !device_name.is_empty() && *name == device_name)
-                    .map(|(_, cfg)| cfg.clone());
-                let config_was_cached = cached_config.is_some();
-                let config = match cached_config {
-                    Some(cfg) => cfg,
-                    None => AudioRecorder::get_preferred_config(&thread_device)
-                        .map_err(|e| format!("Failed to fetch preferred config: {e}"))?,
-                };
-
-                let sample_rate = config.sample_rate().0;
-                let channels = config.channels() as usize;
-
-                log::info!(
-                    "Using device: {:?} rate={} channels={} format={:?}",
-                    thread_device.name(),
-                    sample_rate,
-                    channels,
-                    config.sample_format()
-                );
-
-                let stream = match config.sample_format() {
-                    cpal::SampleFormat::U8 => AudioRecorder::build_stream::<u8>(
-                        &thread_device,
-                        &config,
-                        sample_tx,
-                        channels,
-                        selected_channel,
-                        stop_flag_for_stream,
-                    )
-                    .map_err(|e| format!("Failed to build input stream: {e}"))?,
-                    cpal::SampleFormat::I8 => AudioRecorder::build_stream::<i8>(
-                        &thread_device,
-                        &config,
-                        sample_tx,
-                        channels,
-                        selected_channel,
-                        stop_flag_for_stream,
-                    )
-                    .map_err(|e| format!("Failed to build input stream: {e}"))?,
-                    cpal::SampleFormat::I16 => AudioRecorder::build_stream::<i16>(
-                        &thread_device,
-                        &config,
-                        sample_tx,
-                        channels,
-                        selected_channel,
-                        stop_flag_for_stream,
-                    )
-                    .map_err(|e| format!("Failed to build input stream: {e}"))?,
-                    cpal::SampleFormat::I32 => AudioRecorder::build_stream::<i32>(
-                        &thread_device,
-                        &config,
-                        sample_tx,
-                        channels,
-                        selected_channel,
-                        stop_flag_for_stream,
-                    )
-                    .map_err(|e| format!("Failed to build input stream: {e}"))?,
-                    cpal::SampleFormat::F32 => AudioRecorder::build_stream::<f32>(
-                        &thread_device,
-                        &config,
-                        sample_tx,
-                        channels,
-                        selected_channel,
-                        stop_flag_for_stream,
-                    )
-                    .map_err(|e| format!("Failed to build input stream: {e}"))?,
-                    sample_format => {
-                        return Err(format!("Unsupported sample format: {sample_format:?}"));
-                    }
-                };
-
-                stream
-                    .play()
-                    .map_err(|e| format!("Failed to start microphone stream: {e}"))?;
-
-                if !config_was_cached && !device_name.is_empty() {
-                    *config_cache.lock().unwrap() = Some((device_name, config));
-                }
-
-                Ok((stream, sample_rate))
-            })();
+            let init_result = Self::create_input_stream(
+                &thread_device,
+                sample_tx,
+                selected_channel,
+                Arc::clone(&stop_flag),
+                &config_cache,
+            );
 
             match init_result {
                 Ok((stream, sample_rate)) => {
                     let _ = init_tx.send(Ok(()));
-                    let stream_running_at = Instant::now();
-                    run_consumer(
+                    run_consumer(ConsumerArgs {
                         sample_rate,
                         sample_rx,
                         cmd_rx,
                         level_cb,
                         audio_cb,
                         stop_flag,
-                        stream_running_at,
-                    );
+                    });
                     drop(stream);
                 }
                 Err(error_message) => {
-                    *config_cache.lock().unwrap() = None;
+                    if let Ok(mut cache) = config_cache.lock() {
+                        *cache = None;
+                    }
                     log::error!("{error_message}");
                     let _ = init_tx.send(Err(error_message));
                 }
@@ -257,33 +189,115 @@ impl AudioRecorder {
         }
     }
 
+    fn create_input_stream(
+        device: &Device,
+        sample_tx: mpsc::Sender<AudioChunk>,
+        selected_channel: Option<usize>,
+        stop_flag: Arc<AtomicBool>,
+        config_cache: &Mutex<Option<(String, cpal::SupportedStreamConfig)>>,
+    ) -> Result<(cpal::Stream, u32), String> {
+        let device_name = device.name().unwrap_or_default();
+        let cached_config = config_cache
+            .lock()
+            .map_err(|_| "Microphone config cache lock was poisoned".to_owned())?
+            .as_ref()
+            .filter(|(name, _)| !device_name.is_empty() && *name == device_name)
+            .map(|(_, config)| config.clone());
+        let config_was_cached = cached_config.is_some();
+        let config = match cached_config {
+            Some(config) => config,
+            None => Self::get_preferred_config(device)
+                .map_err(|error| format!("Failed to fetch preferred config: {error}"))?,
+        };
+        let sample_rate = config.sample_rate().0;
+        let channel_count = config.channels();
+        let channels = usize::from(channel_count);
+
+        log::info!(
+            "Using device: {:?} rate={} channels={} format={:?}",
+            device.name(),
+            sample_rate,
+            channels,
+            config.sample_format()
+        );
+
+        let stream = match config.sample_format() {
+            cpal::SampleFormat::U8 => Self::build_stream::<u8>,
+            cpal::SampleFormat::I8 => Self::build_stream::<i8>,
+            cpal::SampleFormat::I16 => Self::build_stream::<i16>,
+            cpal::SampleFormat::I32 => Self::build_stream::<i32>,
+            cpal::SampleFormat::F32 => Self::build_stream::<f32>,
+            sample_format => return Err(format!("Unsupported sample format: {sample_format:?}")),
+        }(
+            device,
+            &config,
+            sample_tx,
+            channels,
+            f32::from(channel_count),
+            selected_channel,
+            stop_flag,
+        )
+        .map_err(|error| format!("Failed to build input stream: {error}"))?;
+
+        stream
+            .play()
+            .map_err(|error| format!("Failed to start microphone stream: {error}"))?;
+
+        if !config_was_cached && !device_name.is_empty() {
+            *config_cache
+                .lock()
+                .map_err(|_| "Microphone config cache lock was poisoned".to_owned())? =
+                Some((device_name, config));
+        }
+
+        Ok((stream, sample_rate))
+    }
+
     /// Queue a recording start and return a one-shot receiver that resolves only
     /// after the first real microphone sample chunk has entered the capture path.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the recorder is not open or its worker has stopped.
     pub fn start(&self) -> Result<mpsc::Receiver<()>, Box<dyn std::error::Error>> {
         let tx = self
             .cmd_tx
             .as_ref()
             .ok_or_else(|| Error::other("Recorder is not open"))?;
         let (ready_tx, ready_rx) = mpsc::channel();
-        tx.send(Cmd::Start(Instant::now(), ready_tx))?;
+        tx.send(Cmd::Start(ready_tx))?;
         Ok(ready_rx)
     }
 
+    /// Stops capture and returns all samples recorded in the current session.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the recorder is not open or its worker has stopped.
     pub fn stop(&self) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
         let (resp_tx, resp_rx) = mpsc::channel();
-        if let Some(tx) = &self.cmd_tx {
-            tx.send(Cmd::Stop(resp_tx))?;
-        }
+        let tx = self
+            .cmd_tx
+            .as_ref()
+            .ok_or_else(|| Error::other("Recorder is not open"))?;
+        tx.send(Cmd::Stop(resp_tx))?;
         Ok(resp_rx.recv()?)
     }
 
     /// True once the capture worker has exited without anyone calling `close`.
+    #[must_use]
     pub fn is_capture_worker_dead(&self) -> bool {
         self.worker_handle
             .as_ref()
-            .is_some_and(|handle| handle.is_finished())
+            .is_some_and(std::thread::JoinHandle::is_finished)
     }
 
+    /// Shuts down the capture worker and releases its input device.
+    ///
+    /// # Errors
+    ///
+    /// This method currently completes cleanup on a best-effort basis and
+    /// reserves its error result for future platform-specific failures.
     pub fn close(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         if let Some(tx) = self.cmd_tx.take() {
             let _ = tx.send(Cmd::Shutdown);
@@ -300,6 +314,7 @@ impl AudioRecorder {
         config: &cpal::SupportedStreamConfig,
         sample_tx: mpsc::Sender<AudioChunk>,
         channels: usize,
+        channel_divisor: f32,
         selected_channel: Option<usize>,
         stop_flag: Arc<AtomicBool>,
     ) -> Result<cpal::Stream, cpal::BuildStreamError>
@@ -311,8 +326,7 @@ impl AudioRecorder {
         let mut eos_sent = false;
         let use_channel: Option<usize> = match selected_channel {
             Some(ch) if ch < channels => Some(ch),
-            Some(_) => None,
-            None => None,
+            Some(_) | None => None,
         };
 
         let stream_cb = move |data: &[T], _: &cpal::InputCallbackInfo| {
@@ -330,12 +344,14 @@ impl AudioRecorder {
             if channels == 1 {
                 output_buffer.extend(data.iter().map(|&sample| sample.to_sample::<f32>()));
             } else {
-                let frame_count = data.len() / channels;
+                let frame_count = data.len().checked_div(channels).unwrap_or_default();
                 output_buffer.reserve(frame_count);
 
                 if let Some(ch) = use_channel {
                     for frame in data.chunks_exact(channels) {
-                        output_buffer.push(frame[ch].to_sample::<f32>());
+                        if let Some(sample) = frame.get(ch) {
+                            output_buffer.push((*sample).to_sample::<f32>());
+                        }
                     }
                 } else {
                     for frame in data.chunks_exact(channels) {
@@ -343,7 +359,7 @@ impl AudioRecorder {
                             .iter()
                             .map(|&sample| sample.to_sample::<f32>())
                             .sum::<f32>()
-                            / channels as f32;
+                            / channel_divisor;
                         output_buffer.push(mono_sample);
                     }
                 }
@@ -360,7 +376,7 @@ impl AudioRecorder {
         device.build_input_stream(
             &config.clone().into(),
             stream_cb,
-            |err| log::error!("Stream error: {}", err),
+            |err| log::error!("Stream error: {err}"),
             None,
         )
     }
@@ -408,13 +424,13 @@ impl AudioRecorder {
         }
 
         log::warn!(
-            "No supported config matched device default rate {:?}, using default config",
-            target_rate
+            "No supported config matched device default rate {target_rate:?}, using default config"
         );
         Ok(default_config)
     }
 }
 
+#[must_use]
 pub fn is_microphone_access_denied(error_message: &str) -> bool {
     let normalized = error_message.to_lowercase();
     normalized.contains("access is denied")
@@ -422,7 +438,7 @@ pub fn is_microphone_access_denied(error_message: &str) -> bool {
         || normalized.contains("0x80070005")
 }
 
-#[allow(dead_code)]
+#[must_use]
 pub fn is_no_input_device_error(error_message: &str) -> bool {
     let normalized = error_message.to_lowercase();
     normalized.contains("no input device found")
@@ -430,51 +446,65 @@ pub fn is_no_input_device_error(error_message: &str) -> bool {
             && normalized.contains("coreaudio"))
 }
 
-#[allow(clippy::too_many_arguments)]
-fn run_consumer(
-    in_sample_rate: u32,
+struct ConsumerArgs {
+    sample_rate: u32,
     sample_rx: mpsc::Receiver<AudioChunk>,
     cmd_rx: mpsc::Receiver<Cmd>,
     level_cb: Option<Arc<dyn Fn(Vec<f32>) + Send + Sync + 'static>>,
     audio_cb: Option<AudioFrameCallback>,
     stop_flag: Arc<AtomicBool>,
-    _stream_running_at: Instant,
-) {
-    let mut frame_resampler = FrameResampler::new(
-        in_sample_rate as usize,
-        WHISPER_SAMPLE_RATE as usize,
-        Duration::from_millis(30),
-    );
+}
+
+fn handle_frame(samples: &[f32], audio_cb: Option<&AudioFrameCallback>, out_buf: &mut Vec<f32>) {
+    out_buf.extend_from_slice(samples);
+    if let Some(cb) = audio_cb {
+        cb(samples);
+    }
+}
+
+fn run_consumer(args: ConsumerArgs) {
+    const BUCKETS: usize = 16;
+
+    let ConsumerArgs {
+        sample_rate: in_sample_rate,
+        sample_rx,
+        cmd_rx,
+        level_cb,
+        audio_cb,
+        stop_flag,
+    } = args;
+    let Ok(input_rate) = usize::try_from(in_sample_rate) else {
+        log::error!("Input sample rate is unsupported on this platform");
+        return;
+    };
+    let Ok(output_rate) = usize::try_from(WHISPER_SAMPLE_RATE) else {
+        log::error!("Whisper sample rate is unsupported on this platform");
+        return;
+    };
+    let Ok(mut frame_resampler) =
+        FrameResampler::new(input_rate, output_rate, Duration::from_millis(30))
+    else {
+        log::error!("Failed to create audio frame resampler");
+        return;
+    };
 
     let mut processed_samples = Vec::<f32>::new();
     let mut recording = false;
 
-    const BUCKETS: usize = 16;
-    let target_window = (f64::from(in_sample_rate) / 30.0).round() as usize;
+    let target_window = usize::try_from(in_sample_rate.saturating_add(15) / 30).unwrap_or_default();
     let window_size = [256usize, 512, 1024, 2048]
         .into_iter()
         .min_by_key(|w| w.abs_diff(target_window))
-        .unwrap();
+        .unwrap_or(256);
     let mut visualizer = AudioVisualiser::new(in_sample_rate, window_size, BUCKETS, 400.0, 4000.0);
 
     let mut capture_ready_tx: Option<mpsc::Sender<()>> = None;
-
-    fn handle_frame(
-        samples: &[f32],
-        audio_cb: &Option<AudioFrameCallback>,
-        out_buf: &mut Vec<f32>,
-    ) {
-        out_buf.extend_from_slice(samples);
-        if let Some(cb) = audio_cb {
-            cb(samples);
-        }
-    }
 
     while let Ok(chunk) = sample_rx.recv() {
         let mut pending = Some(chunk);
         while let Ok(cmd) = cmd_rx.try_recv() {
             match cmd {
-                Cmd::Start(_sent_at, ready_tx) => {
+                Cmd::Start(ready_tx) => {
                     capture_ready_tx = Some(ready_tx);
                     stop_flag.store(false, Ordering::Relaxed);
                     processed_samples.clear();
@@ -489,7 +519,7 @@ fn run_consumer(
 
                     if let Some(AudioChunk::Samples(raw)) = pending.take() {
                         frame_resampler.push(&raw, &mut |frame: &[f32]| {
-                            handle_frame(frame, &audio_cb, &mut processed_samples)
+                            handle_frame(frame, audio_cb.as_ref(), &mut processed_samples);
                         });
                     }
 
@@ -497,7 +527,7 @@ fn run_consumer(
                         match sample_rx.recv_timeout(Duration::from_secs(2)) {
                             Ok(AudioChunk::Samples(remaining)) => {
                                 frame_resampler.push(&remaining, &mut |frame: &[f32]| {
-                                    handle_frame(frame, &audio_cb, &mut processed_samples)
+                                    handle_frame(frame, audio_cb.as_ref(), &mut processed_samples);
                                 });
                             }
                             Ok(AudioChunk::EndOfStream) => break,
@@ -509,7 +539,7 @@ fn run_consumer(
                     }
 
                     frame_resampler.finish(&mut |frame: &[f32]| {
-                        handle_frame(frame, &audio_cb, &mut processed_samples)
+                        handle_frame(frame, audio_cb.as_ref(), &mut processed_samples);
                     });
 
                     let _ = reply_tx.send(std::mem::take(&mut processed_samples));
@@ -522,9 +552,8 @@ fn run_consumer(
             }
         }
 
-        let raw = match pending.take() {
-            Some(AudioChunk::Samples(s)) => s,
-            _ => continue,
+        let Some(AudioChunk::Samples(raw)) = pending.take() else {
+            continue;
         };
 
         if recording {
@@ -535,7 +564,7 @@ fn run_consumer(
             }
 
             frame_resampler.push(&raw, &mut |frame: &[f32]| {
-                handle_frame(frame, &audio_cb, &mut processed_samples)
+                handle_frame(frame, audio_cb.as_ref(), &mut processed_samples);
             });
 
             if let Some(ready_tx) = capture_ready_tx.take() {

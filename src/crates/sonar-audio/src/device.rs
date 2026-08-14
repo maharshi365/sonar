@@ -1,7 +1,5 @@
 //! Input/output device enumeration (cpal). Not yet surfaced to JS; kept for a
 //! future device-picker.
-#![allow(dead_code)]
-
 use cpal::traits::{DeviceTrait, HostTrait};
 
 pub struct CpalDeviceInfo {
@@ -11,6 +9,11 @@ pub struct CpalDeviceInfo {
     pub device: cpal::Device,
 }
 
+/// Lists the audio input devices visible to cpal.
+///
+/// # Errors
+///
+/// Returns an error when the platform audio host cannot enumerate input devices.
 pub fn list_input_devices() -> Result<Vec<CpalDeviceInfo>, Box<dyn std::error::Error>> {
     let host = crate::get_cpal_host();
     let default_name = host.default_input_device().and_then(|d| d.name().ok());
@@ -33,6 +36,11 @@ pub fn list_input_devices() -> Result<Vec<CpalDeviceInfo>, Box<dyn std::error::E
     Ok(out)
 }
 
+/// Lists the audio output devices visible to cpal.
+///
+/// # Errors
+///
+/// Returns an error when the platform audio host cannot enumerate output devices.
 pub fn list_output_devices() -> Result<Vec<CpalDeviceInfo>, Box<dyn std::error::Error>> {
     let host = crate::get_cpal_host();
     let default_name = host.default_output_device().and_then(|d| d.name().ok());

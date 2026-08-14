@@ -1334,6 +1334,7 @@ version = "0.1.0"
 dependencies = [
  "cpal",
  "log",
+ "num-traits",
  "rubato",
  "rustfft",
 ]
@@ -1345,6 +1346,7 @@ dependencies = [
  "napi",
  "napi-build",
  "napi-derive",
+ "num-traits",
  "sonar-dictation",
  "sonar-models",
  "sonar-transcription",

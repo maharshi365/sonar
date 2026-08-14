@@ -10,6 +10,7 @@ use std::sync::{Arc, OnceLock};
 use napi::bindgen_prelude::*;
 use napi::threadsafe_function::{ErrorStrategy, ThreadsafeFunction, ThreadsafeFunctionCallMode};
 use napi_derive::napi;
+use num_traits::ToPrimitive;
 
 use sonar_dictation::{Pipeline, SessionCallbacks};
 use sonar_models::{DownloadProgress, Manager, ModelStatus};
@@ -38,12 +39,12 @@ impl From<ModelStatus> for JsModelStatus {
             name: s.name,
             description: s.description,
             filename: s.filename,
-            size_bytes: s.size_bytes as f64,
+            size_bytes: s.size_bytes.to_f64().unwrap_or(f64::MAX),
             languages: s.languages,
             recommended: s.recommended,
             is_downloaded: s.is_downloaded,
             is_downloading: s.is_downloading,
-            partial_bytes: s.partial_bytes as f64,
+            partial_bytes: s.partial_bytes.to_f64().unwrap_or(f64::MAX),
         }
     }
 }
@@ -61,8 +62,8 @@ impl From<DownloadProgress> for JsDownloadProgress {
     fn from(p: DownloadProgress) -> Self {
         Self {
             model_id: p.model_id,
-            downloaded: p.downloaded as f64,
-            total: p.total as f64,
+            downloaded: p.downloaded.to_f64().unwrap_or(f64::MAX),
+            total: p.total.to_f64().unwrap_or(f64::MAX),
             percentage: p.percentage,
         }
     }
@@ -82,6 +83,10 @@ fn manager() -> Result<Arc<Manager>> {
 /// Initialize the model manager with the directory where models are stored.
 ///
 /// Safe to call multiple times; only the first call takes effect.
+///
+/// # Errors
+///
+/// Returns an error if the models directory or bundled catalog is invalid.
 #[napi]
 pub fn init_models(models_dir: String) -> Result<()> {
     if MANAGER.get().is_some() {
@@ -104,6 +109,10 @@ pub fn init_models(models_dir: String) -> Result<()> {
 }
 
 /// Return every catalog model with its current on-disk status.
+///
+/// # Errors
+///
+/// Returns an error if the model manager has not been initialized.
 #[napi]
 pub fn list_models() -> Result<Vec<JsModelStatus>> {
     let mgr = manager()?;
@@ -120,6 +129,12 @@ pub fn list_models() -> Result<Vec<JsModelStatus>> {
 /// The `JsFunction` is turned into a thread-safe function synchronously (before
 /// any await point) because `JsFunction` itself is not `Send`; the resulting
 /// `ThreadsafeFunction` is `Send` and is what the async download task holds.
+///
+/// # Errors
+///
+/// Returns an error if the manager is uninitialized or the JavaScript promise
+/// and progress callback cannot be created.
+#[allow(clippy::needless_pass_by_value)] // N-API owns JavaScript function arguments.
 #[napi(ts_return_type = "Promise<void>")]
 pub fn download_model(
     env: Env,
@@ -150,13 +165,24 @@ pub fn download_model(
 
 /// Request cancellation of an in-flight download. Returns true if a download
 /// was actually in flight. The partial download is kept for later resume.
+///
+/// # Errors
+///
+/// Returns an error if the model manager has not been initialized.
 #[napi]
 pub fn cancel_download(model_id: String) -> Result<bool> {
     let mgr = manager()?;
+    let model_id = model_id.into_boxed_str();
     Ok(mgr.cancel(&model_id))
 }
 
 /// Remove a downloaded model (and any partial) from disk.
+///
+/// # Errors
+///
+/// Returns an error if the manager is uninitialized, the model is unknown, or
+/// its files cannot be removed.
+#[allow(clippy::trailing_empty_array)]
 #[napi]
 pub async fn remove_model(model_id: String) -> Result<()> {
     let mgr = manager()?;
@@ -188,14 +214,24 @@ pub struct JsStreamText {
 
 /// Preload a model into memory without recording. `filename` is the model file
 /// within the models directory (e.g. `ggml-base.bin`).
+///
+/// # Errors
+///
+/// Returns an error if the pipeline is uninitialized or the model cannot load.
 #[napi]
 pub fn load_model(model_id: String, filename: String) -> Result<()> {
     let pl = pipeline()?;
+    let model_id = model_id.into_boxed_str();
+    let filename = filename.into_boxed_str();
     pl.load_model(&model_id, &filename)
         .map_err(Error::from_reason)
 }
 
 /// Unload the currently loaded model, freeing memory.
+///
+/// # Errors
+///
+/// Returns an error if the pipeline has not been initialized.
 #[napi]
 pub fn unload_model() -> Result<()> {
     pipeline()?.unload_model();
@@ -203,12 +239,20 @@ pub fn unload_model() -> Result<()> {
 }
 
 /// Whether a recording session is currently in progress.
+///
+/// # Errors
+///
+/// Returns an error if the pipeline has not been initialized.
 #[napi]
 pub fn is_recording() -> Result<bool> {
     Ok(pipeline()?.is_recording())
 }
 
 /// The id of the currently loaded model, if any.
+///
+/// # Errors
+///
+/// Returns an error if the pipeline has not been initialized.
 #[napi]
 pub fn current_model() -> Result<Option<String>> {
     Ok(pipeline()?.current_model_id())
@@ -219,6 +263,12 @@ pub fn current_model() -> Result<Option<String>> {
 /// `on_text` receives the live committed/tentative text as it evolves;
 /// `on_level` receives 16 audio-spectrum buckets (0..1) for the dock waveform.
 /// Both fire on background threads. Returns once the microphone is capturing.
+///
+/// # Errors
+///
+/// Returns an error if callbacks cannot be created or model/microphone startup
+/// fails.
+#[allow(clippy::needless_pass_by_value)] // N-API owns JavaScript function arguments.
 #[napi]
 pub fn start_transcription(
     model_id: String,
@@ -249,11 +299,18 @@ pub fn start_transcription(
         }),
     };
 
-    pl.start(&model_id, &filename, callbacks)
+    let model_id = model_id.into_boxed_str();
+    let filename = filename.into_boxed_str();
+    pl.start(&model_id, &filename, &callbacks)
         .map_err(Error::from_reason)
 }
 
 /// Stop recording and resolve with the final transcript.
+///
+/// # Errors
+///
+/// Returns an error if the pipeline is uninitialized or the promise cannot be
+/// created.
 #[napi(ts_return_type = "Promise<string>")]
 pub fn stop_transcription(env: Env) -> Result<napi::JsObject> {
     let pl = pipeline()?;
@@ -270,6 +327,10 @@ pub fn stop_transcription(env: Env) -> Result<napi::JsObject> {
 }
 
 /// Cancel an in-flight recording, discarding any transcript.
+///
+/// # Errors
+///
+/// Returns an error if the pipeline has not been initialized.
 #[napi]
 pub fn cancel_transcription() -> Result<()> {
     pipeline()?.cancel();

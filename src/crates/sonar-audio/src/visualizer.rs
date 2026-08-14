@@ -1,3 +1,4 @@
+use num_traits::ToPrimitive;
 use rustfft::{num_complex::Complex32, Fft, FftPlanner};
 use std::sync::Arc;
 
@@ -33,16 +34,20 @@ impl AudioVisualiser {
     ) -> Self {
         let mut planner = FftPlanner::<f32>::new();
         let fft = planner.plan_fft_forward(window_size);
+        let window_size_f32 = window_size.to_f32().unwrap_or(f32::MAX);
+        let sample_rate_f32 = sample_rate.to_f32().unwrap_or(f32::MAX);
+        let buckets_f32 = buckets.to_f32().unwrap_or(f32::MAX);
 
         // Pre-compute Hann window
         let window: Vec<f32> = (0..window_size)
             .map(|i| {
-                0.5 * (1.0 - (2.0 * std::f32::consts::PI * i as f32 / window_size as f32).cos())
+                let i = i.to_f32().unwrap_or(f32::MAX);
+                0.5 * (1.0 - (2.0 * std::f32::consts::PI * i / window_size_f32).cos())
             })
             .collect();
 
         // Pre-compute bucket frequency ranges
-        let nyquist = sample_rate as f32 / 2.0;
+        let nyquist = sample_rate_f32 / 2.0;
         let freq_min = freq_min.min(nyquist);
         let freq_max = freq_max.min(nyquist);
 
@@ -50,18 +55,22 @@ impl AudioVisualiser {
 
         for b in 0..buckets {
             // Use logarithmic spacing for better perceptual representation
-            let log_start = (b as f32 / buckets as f32).powi(2);
-            let log_end = ((b + 1) as f32 / buckets as f32).powi(2);
+            let log_start = (b.to_f32().unwrap_or(f32::MAX) / buckets_f32).powi(2);
+            let log_end = (b.saturating_add(1).to_f32().unwrap_or(f32::MAX) / buckets_f32).powi(2);
 
-            let start_hz = freq_min + (freq_max - freq_min) * log_start;
-            let end_hz = freq_min + (freq_max - freq_min) * log_end;
+            let start_hz = (freq_max - freq_min).mul_add(log_start, freq_min);
+            let end_hz = (freq_max - freq_min).mul_add(log_end, freq_min);
 
-            let start_bin = ((start_hz * window_size as f32) / sample_rate as f32) as usize;
-            let mut end_bin = ((end_hz * window_size as f32) / sample_rate as f32) as usize;
+            let start_bin = ((start_hz * window_size_f32) / sample_rate_f32)
+                .to_usize()
+                .unwrap_or(usize::MAX);
+            let mut end_bin = ((end_hz * window_size_f32) / sample_rate_f32)
+                .to_usize()
+                .unwrap_or(usize::MAX);
 
             // Ensure each bucket has at least one bin
             if end_bin <= start_bin {
-                end_bin = start_bin + 1;
+                end_bin = start_bin.saturating_add(1);
             }
 
             // Clamp to valid range
@@ -77,7 +86,7 @@ impl AudioVisualiser {
             bucket_ranges,
             fft_input: vec![Complex32::new(0.0, 0.0); window_size],
             noise_floor: vec![-40.0; buckets], // Initialize to reasonable noise floor
-            buffer: Vec::with_capacity(window_size * 2),
+            buffer: Vec::with_capacity(window_size.saturating_mul(2)),
             window_size,
             buckets,
         }
@@ -93,15 +102,21 @@ impl AudioVisualiser {
         }
 
         // Take the required window of samples
-        let window_samples = &self.buffer[..self.window_size];
+        let window_samples = self.buffer.get(..self.window_size)?;
 
         // Remove DC component
-        let mean = window_samples.iter().sum::<f32>() / self.window_size as f32;
+        let window_size_f32 = self.window_size.to_f32().unwrap_or(f32::MAX);
+        let mean = window_samples.iter().sum::<f32>() / window_size_f32;
 
         // Apply window function and prepare FFT input
-        for (i, &sample) in window_samples.iter().enumerate() {
-            let windowed_sample = (sample - mean) * self.window[i];
-            self.fft_input[i] = Complex32::new(windowed_sample, 0.0);
+        for ((fft_input, &sample), &window) in self
+            .fft_input
+            .iter_mut()
+            .zip(window_samples)
+            .zip(&self.window)
+        {
+            let windowed_sample = (sample - mean) * window;
+            *fft_input = Complex32::new(windowed_sample, 0.0);
         }
 
         // Perform FFT
@@ -110,42 +125,58 @@ impl AudioVisualiser {
         // Compute power spectrum and bucket levels
         let mut buckets = vec![0.0; self.buckets];
 
-        for (bucket_idx, &(start_bin, end_bin)) in self.bucket_ranges.iter().enumerate() {
+        for ((&(start_bin, end_bin), bucket), noise_floor) in self
+            .bucket_ranges
+            .iter()
+            .zip(&mut buckets)
+            .zip(&mut self.noise_floor)
+        {
             if start_bin >= end_bin || end_bin > self.fft_input.len() / 2 {
                 continue;
             }
 
             // Calculate average power in this frequency range
             let mut power_sum = 0.0;
-            for bin_idx in start_bin..end_bin {
-                let magnitude = self.fft_input[bin_idx].norm();
+            let Some(bins) = self.fft_input.get(start_bin..end_bin) else {
+                continue;
+            };
+            for bin in bins {
+                let magnitude = bin.norm();
                 power_sum += magnitude * magnitude;
             }
 
-            let avg_power = power_sum / (end_bin - start_bin) as f32;
+            let Some(bin_count) = end_bin
+                .checked_sub(start_bin)
+                .and_then(|count| count.to_f32())
+            else {
+                continue;
+            };
+            let avg_power = power_sum / bin_count;
 
             // Convert to dB with proper scaling
             let db = if avg_power > 1e-12 {
-                20.0 * (avg_power.sqrt() / self.window_size as f32).log10()
+                20.0 * (avg_power.sqrt() / window_size_f32).log10()
             } else {
                 -80.0 // Very low floor for zero power
             };
 
             // Only update noise floor when signal is quiet (below current floor + 10dB)
-            if db < self.noise_floor[bucket_idx] + 10.0 {
+            if db < *noise_floor + 10.0 {
                 const NOISE_ALPHA: f32 = 0.001; // Very slow adaptation
-                self.noise_floor[bucket_idx] =
-                    NOISE_ALPHA * db + (1.0 - NOISE_ALPHA) * self.noise_floor[bucket_idx];
+                *noise_floor = NOISE_ALPHA.mul_add(db, (1.0 - NOISE_ALPHA) * *noise_floor);
             }
 
             // Map configurable dB range to 0-1 with gain and curve shaping
             let normalized = ((db - DB_MIN) / (DB_MAX - DB_MIN)).clamp(0.0, 1.0);
-            buckets[bucket_idx] = (normalized * GAIN).powf(CURVE_POWER).clamp(0.0, 1.0);
+            *bucket = (normalized * GAIN).powf(CURVE_POWER).clamp(0.0, 1.0);
         }
 
         // Apply light smoothing to reduce jitter
-        for i in 1..buckets.len() - 1 {
-            buckets[i] = buckets[i] * 0.7 + buckets[i - 1] * 0.15 + buckets[i + 1] * 0.15;
+        let original = buckets.clone();
+        let mut left = original.first().copied().unwrap_or(0.0);
+        for (current, &right) in buckets.iter_mut().skip(1).zip(original.iter().skip(2)) {
+            *current = right.mul_add(0.15, current.mul_add(0.7, left * 0.15));
+            left = *current;
         }
 
         // Clear processed samples from buffer

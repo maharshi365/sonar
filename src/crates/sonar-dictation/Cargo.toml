@@ -5,6 +5,9 @@ edition.workspace = true
 description = "Live microphone-to-transcription session orchestration for Sonar."
 license.workspace = true
 
+[lints]
+workspace = true
+
 [dependencies]
 sonar-audio = { path = "../sonar-audio" }
 sonar-transcription = { path = "../sonar-transcription" }
