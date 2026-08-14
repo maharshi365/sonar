@@ -1,22 +1,55 @@
+import { ChevronUp, Minimize2 } from "lucide-react"
 import { StrictMode, useEffect, useRef, useState } from "react"
 import { createRoot } from "react-dom/client"
 
 import type { StreamText } from "../../shared/transcription"
 import "@/styles/globals.css"
+import "@/styles/overlay.css"
 
-/** Number of waveform bars — matches the Rust visualizer's bucket count. */
 const BAR_COUNT = 16
 
-/**
- * The dock overlay UI.
- *
- * A compact, translucent card pinned near the bottom of the screen while
- * recording. Shows a live audio waveform (driven by level buckets from the Rust
- * pipeline) and the streaming transcript (committed prefix + tentative suffix).
- */
+function Waveform({ levels, previewing }: { levels: number[]; previewing: boolean }) {
+  return (
+    <div
+      className={`overlay-waveform ${previewing ? "is-previewing" : ""}`}
+      aria-hidden="true"
+    >
+      {levels.map((level, index) => (
+        <span
+          key={index}
+          style={{
+            height: `${Math.max(3, Math.min(24, level * 24))}px`,
+            opacity: 0.48 + level * 0.52,
+          }}
+        />
+      ))}
+    </div>
+  )
+}
+
+function Transcript({ text }: { text: StreamText }) {
+  return (
+    <p>
+      <span>{text.committed}</span>
+      <span className="overlay-tentative">{text.tentative}</span>
+    </p>
+  )
+}
+
+function TranscriptTail({ text }: { text: StreamText }) {
+  const fullText = `${text.committed}${text.tentative}`
+  const slicedTail = fullText.slice(-96)
+  const firstSpace = slicedTail.indexOf(" ")
+  const tail = fullText.length > slicedTail.length && firstSpace >= 0
+    ? slicedTail.slice(firstSpace + 1)
+    : slicedTail
+  return <p>{fullText.length > tail.length ? `...${tail}` : tail}</p>
+}
+
 function Overlay() {
   const [text, setText] = useState<StreamText>({ committed: "", tentative: "" })
   const [levels, setLevels] = useState<number[]>(() => new Array(BAR_COUNT).fill(0))
+  const [expanded, setExpanded] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -26,9 +59,9 @@ function Overlay() {
     })
     const offState = window.sonar.transcription.onState((recording) => {
       if (recording) {
-        // Reset for a fresh session.
         setText({ committed: "", tentative: "" })
         setLevels(new Array(BAR_COUNT).fill(0))
+        setExpanded(false)
       }
     })
     return () => {
@@ -38,46 +71,60 @@ function Overlay() {
     }
   }, [])
 
-  // Keep the latest text in view as it grows.
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight })
   }, [text])
 
-  const hasText = text.committed.length > 0 || text.tentative.length > 0
+  const displayText = text.committed || text.tentative
+    ? text
+    : { committed: "Listening...", tentative: "" }
+  const previewingLevels = !levels.some(Boolean)
+  const displayLevels = !previewingLevels
+    ? levels
+    : levels.map((_, index) => 0.18 + ((index * 7) % 9) / 13)
 
   return (
-    <div className="flex h-screen w-screen items-end justify-center bg-transparent p-2">
-      <div className="flex w-full items-center gap-4 rounded-2xl border border-white/10 bg-[oklch(0.18_0.006_285/0.85)] px-5 py-4 shadow-2xl backdrop-blur-xl">
-        {/* Live waveform */}
-        <div className="flex h-12 shrink-0 items-center gap-[3px]">
-          {levels.map((level, i) => (
-            <span
-              key={i}
-              className="w-[3px] rounded-full bg-primary transition-[height] duration-75"
-              style={{
-                height: `${Math.max(4, Math.min(48, level * 48))}px`,
-                opacity: 0.5 + level * 0.5,
-              }}
-            />
-          ))}
+    <main className="overlay-stage">
+      <section
+        className={`overlay-dock overlay-dock--rail ${expanded ? "is-expanded" : ""}`}
+      >
+        <div className="overlay-expanded-panel" aria-hidden={!expanded}>
+          <header>
+            <div>
+              <span className="overlay-eyebrow">Live transcript</span>
+              <span className="overlay-status"><i /> Recording</span>
+            </div>
+            <button
+              type="button"
+              className="overlay-icon-button"
+              aria-label="Collapse transcript"
+              onClick={() => setExpanded(false)}
+            >
+              <Minimize2 size={15} strokeWidth={1.8} />
+            </button>
+          </header>
+          <div ref={scrollRef} className="overlay-full-transcript">
+            <Transcript text={displayText} />
+          </div>
         </div>
 
-        {/* Live transcript */}
-        <div
-          ref={scrollRef}
-          className="max-h-16 flex-1 overflow-y-auto text-left text-sm leading-6 text-foreground [scrollbar-width:none]"
-        >
-          {hasText ? (
-            <p>
-              <span>{text.committed}</span>
-              <span className="text-muted-foreground">{text.tentative}</span>
-            </p>
-          ) : (
-            <p className="text-muted-foreground">Listening…</p>
-          )}
+        <div className="overlay-compact-row">
+          <span className="overlay-recording-dot" aria-label="Recording" />
+          <Waveform levels={displayLevels} previewing={previewingLevels} />
+          <div className="overlay-peek" aria-hidden={expanded}>
+            <TranscriptTail text={displayText} />
+          </div>
+          <button
+            type="button"
+            className="overlay-expand-button"
+            aria-label="Expand transcript"
+            onClick={() => setExpanded(true)}
+          >
+            <ChevronUp size={16} strokeWidth={2} />
+          </button>
         </div>
-      </div>
-    </div>
+      </section>
+    </main>
   )
 }
 

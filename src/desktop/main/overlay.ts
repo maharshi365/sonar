@@ -8,8 +8,10 @@ import { BrowserWindow, screen } from "electron"
  * sessions so it can reappear instantly.
  */
 
-const OVERLAY_WIDTH = 520
-const OVERLAY_HEIGHT = 140
+// The visible dock rests at a compact size; the transparent area gives its
+// hover and expanded states room to grow.
+const OVERLAY_WIDTH = 680
+const OVERLAY_HEIGHT = 500
 /** Gap between the overlay and the bottom edge of the work area. */
 const BOTTOM_MARGIN = 80
 
