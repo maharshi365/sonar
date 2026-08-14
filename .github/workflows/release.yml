@@ -54,10 +54,14 @@ jobs:
 
       - name: Install Vulkan SDK
         if: runner.os == 'Windows'
-        uses: humbletim/install-vulkan-sdk@30ba978f977e81b72d091fc8888feb1fb26f9aff # v1.2
-        with:
-          version: 1.4.309.0
-          cache: true
+        shell: pwsh
+        run: |
+          $version = "1.4.313.2"
+          $installer = Join-Path $env:RUNNER_TEMP "VulkanSDK-Installer.exe"
+          curl.exe -fL -o $installer "https://sdk.lunarg.com/sdk/download/$version/windows/vulkan_sdk.exe"
+          & $installer --accept-licenses --default-answer --confirm-command install
+          Add-Content $env:GITHUB_ENV "VULKAN_SDK=C:\VulkanSDK\$version"
+          Add-Content $env:GITHUB_PATH "C:\VulkanSDK\$version\bin"
 
       - name: Install dependencies
         run: npm ci
