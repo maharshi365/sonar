@@ -12,3 +12,9 @@ src/crates/**/*.node
 # napi-rs generated bindings (regenerated on build)
 src/crates/sonar-core/index.js
 src/crates/sonar-core/index.d.ts
+
+# transcribe-cpp's runtime libraries, staged by build.rs on every native build
+src/crates/sonar-core/*.dll
+src/crates/sonar-core/*.dylib
+src/crates/sonar-core/*.so
+src/crates/sonar-core/*.so.*

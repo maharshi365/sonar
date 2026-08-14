@@ -74,6 +74,127 @@ impl From<DownloadProgress> for JsDownloadProgress {
     }
 }
 
+/// Initialize the transcribe-cpp native backend once, before any model load:
+/// routes native/ggml diagnostics into the `log` facade and registers compute
+/// backend modules. Must run before the first [`transcription::TranscriptionEngine::load_model`]
+/// call — in a `dynamic-backends` build (Windows x86_64, Linux) skipping this
+/// leaves zero compute backend modules registered, so `Model::load` has
+/// nothing to run inference on.
+///
+/// On Windows this first widens the process's DLL search path to include our
+/// own addon's directory (where `build.rs`'s `stage_transcribe_runtime_libs`
+/// copies the dlopen'd ggml modules): transcribe-cpp otherwise resolves them
+/// relative to the *main executable's* directory, which for Electron in dev
+/// mode is `node_modules/electron/dist`, not this crate. Linux instead bakes
+/// an `$ORIGIN` rpath into the compiled `.node` addon at link time (see
+/// `build.rs`), so no runtime step is needed there. A static build (macOS
+/// `metal`) makes `init_backends_default` a harmless no-op.
+///
+/// Ported from Handy's `init_transcribe_backend`
+/// (src-tauri/src/managers/transcription.rs).
+fn init_transcribe_backend() {
+    static INIT: std::sync::Once = std::sync::Once::new();
+    INIT.call_once(|| {
+        #[cfg(target_os = "windows")]
+        {
+            if let Some(dir) = windows_dll::own_module_dir() {
+                windows_dll::add_search_dir(&dir);
+            } else {
+                log::warn!(
+                    "could not resolve sonar-core's own module directory; \
+                     transcribe-cpp's dlopen'd backend modules may not be found"
+                );
+            }
+        }
+
+        transcribe_cpp::init_logging();
+        match transcribe_cpp::init_backends_default() {
+            Ok(()) => {
+                let devices = transcribe_cpp::devices();
+                log::info!(
+                    "transcribe-cpp initialized with {} compute device(s): [{}]",
+                    devices.len(),
+                    devices
+                        .iter()
+                        .map(|d| format!("{} ({})", d.name, d.kind))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                );
+            }
+            Err(e) => log::warn!("failed to initialize transcribe-cpp backends: {e}"),
+        }
+    });
+}
+
+/// Minimal WinAPI shims for widening the process's DLL search path to this
+/// addon's own directory. No extra crate dependency (e.g. `windows-sys`) is
+/// pulled in just for these two calls.
+#[cfg(target_os = "windows")]
+mod windows_dll {
+    use std::ffi::c_void;
+    use std::os::windows::ffi::{OsStrExt, OsStringExt};
+    use std::path::{Path, PathBuf};
+
+    const GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS: u32 = 0x00000004;
+
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn GetModuleHandleExW(
+            dw_flags: u32,
+            lp_module_name: *const c_void,
+            ph_module: *mut *mut c_void,
+        ) -> i32;
+        fn GetModuleFileNameW(h_module: *mut c_void, lp_filename: *mut u16, n_size: u32) -> u32;
+        fn SetDllDirectoryW(lp_path_name: *const u16) -> i32;
+    }
+
+    /// The directory containing *this compiled addon* (the `.node` file),
+    /// found via the address of a function inside it rather than assuming
+    /// any particular working directory or executable path.
+    pub fn own_module_dir() -> Option<PathBuf> {
+        let marker = own_module_dir as *const () as *const c_void;
+        let mut h_module: *mut c_void = std::ptr::null_mut();
+        let ok = unsafe {
+            GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS, marker, &mut h_module)
+        };
+        if ok == 0 || h_module.is_null() {
+            return None;
+        }
+
+        let mut buf = vec![0u16; 512];
+        loop {
+            let len = unsafe { GetModuleFileNameW(h_module, buf.as_mut_ptr(), buf.len() as u32) };
+            if len == 0 {
+                return None;
+            }
+            if (len as usize) < buf.len() - 1 {
+                buf.truncate(len as usize);
+                break;
+            }
+            buf.resize(buf.len() * 2, 0);
+        }
+
+        PathBuf::from(std::ffi::OsString::from_wide(&buf))
+            .parent()
+            .map(Path::to_path_buf)
+    }
+
+    /// Add `dir` to the process-wide DLL search path used by subsequent
+    /// (implicit or explicit) `LoadLibrary` calls that don't specify a full
+    /// path — including transcribe-cpp's internal `dlopen` of its ggml
+    /// backend modules.
+    pub fn add_search_dir(dir: &Path) {
+        let wide: Vec<u16> = dir
+            .as_os_str()
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+        unsafe {
+            SetDllDirectoryW(wide.as_ptr());
+        }
+    }
+}
+
 /// Process-wide manager. Initialized once with the models directory that the
 /// main process resolves from Electron's userData path.
 static MANAGER: OnceLock<Arc<Manager>> = OnceLock::new();
@@ -93,6 +214,10 @@ pub fn init_models(models_dir: String) -> Result<()> {
     if MANAGER.get().is_some() {
         return Ok(());
     }
+
+    // Must run before any model load (see `init_transcribe_backend`'s docs).
+    init_transcribe_backend();
+
     let dir = PathBuf::from(models_dir);
     let mgr = Manager::new(dir.clone()).map_err(Error::from_reason)?;
     // If another thread won the race, that's fine — ignore the returned value.
