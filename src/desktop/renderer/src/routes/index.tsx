@@ -11,8 +11,6 @@ export const Route = createFileRoute("/")({
 
 function HomePage() {
   const [state, setState] = useState<TranscriptionState>("idle")
-  const [transcript, setTranscript] = useState("")
-  const [live, setLive] = useState("")
   const [error, setError] = useState("")
   const [busy, setBusy] = useState(false)
 
@@ -20,18 +18,11 @@ function HomePage() {
     const offState = window.sonar.transcription.onState((nextState) => {
       setState(nextState)
       if (nextState === "recording") {
-        setLive("")
-        setTranscript("")
         setError("")
       }
       setBusy(nextState === "transcribing")
     })
-    const offText = window.sonar.transcription.onText((text) => {
-      setLive(text.committed + text.tentative)
-    })
-    const offResult = window.sonar.transcription.onResult((text) => {
-      setTranscript(text)
-      setLive("")
+    const offResult = window.sonar.transcription.onResult(() => {
       setBusy(false)
     })
     const offError = window.sonar.transcription.onError((message) => {
@@ -40,7 +31,6 @@ function HomePage() {
     })
     return () => {
       offState()
-      offText()
       offResult()
       offError()
     }
@@ -114,14 +104,6 @@ function HomePage() {
           </p>
         )}
 
-        {(live || transcript) && (
-          <div className="mt-8 w-full max-w-xl rounded-xl border border-border bg-card px-5 py-4 text-left">
-            <p className="mb-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-              {recording ? "Live" : "Transcript"}
-            </p>
-            <p className="text-sm leading-6 text-foreground">{live || transcript}</p>
-          </div>
-        )}
       </section>
 
       <footer className="mt-auto flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-border pt-5 text-xs text-muted-foreground">
