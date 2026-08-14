@@ -1,10 +1,9 @@
-import { useForm } from "@tanstack/react-form"
+import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Link } from "@tanstack/react-router"
 
 import type { ModelStatus } from "../../../../shared/models"
 import type { Settings } from "../../../../shared/settings"
-import { Button } from "@/components/ui/button"
 import {
   Select,
   SelectContent,
@@ -36,7 +35,6 @@ export function GeneralSettings() {
           <Skeleton className="h-8 w-full" />
           <Skeleton className="h-3 w-64" />
         </div>
-        <Skeleton className="h-8 w-32" />
       </div>
     )
   }
@@ -82,91 +80,61 @@ function GeneralSettingsForm({
     ? settings.general.ttsModel
     : ""
 
-  const form = useForm({
-    defaultValues: {
-      ttsModel: initialModel,
-    },
-    onSubmit: async ({ value }) => {
-      await mutation.mutateAsync({ general: { ttsModel: value.ttsModel } })
-    },
-  })
+  const [ttsModel, setTtsModel] = useState(initialModel)
 
   return (
-    <form
-      className="max-w-xl space-y-6"
-      onSubmit={(event) => {
-        event.preventDefault()
-        void form.handleSubmit()
-      }}
-    >
-      <form.Field name="ttsModel">
-        {(field) => (
-          <div className="space-y-2">
-            <label htmlFor={field.name} className="text-sm font-medium">
-              Default speech model
-            </label>
-            {downloadedModels.length > 0 ? (
-              <Select
-                value={field.state.value}
-                onValueChange={(value) => field.handleChange(value as string)}
-                disabled={mutation.isPending}
-              >
-                <SelectTrigger
-                  id={field.name}
-                  className="w-full"
-                  onBlur={field.handleBlur}
-                >
-                  <SelectValue placeholder="Select a model">
-                    {(value: string) =>
-                      downloadedModels.find((model) => model.id === value)
-                        ?.name ?? "Select a model"
-                    }
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  {downloadedModels.map((model) => (
-                    <SelectItem key={model.id} value={model.id}>
-                      {model.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            ) : (
-              <p className="rounded-lg border border-border bg-card/40 px-3 py-2 text-xs text-muted-foreground">
-                No models downloaded yet.{" "}
-                <Link to="/models" className="text-primary hover:underline">
-                  Download a model
-                </Link>{" "}
-                to select it here.
-              </p>
-            )}
-            <p className="text-xs text-muted-foreground">
-              The model used for transcription by default. Only downloaded
-              models can be selected.
-            </p>
-          </div>
-        )}
-      </form.Field>
-
-      <div className="flex items-center gap-3">
-        <form.Subscribe selector={(state) => state.isSubmitting}>
-          {(isSubmitting) => (
-            <Button
-              type="submit"
-              disabled={
-                isSubmitting ||
-                mutation.isPending ||
-                downloadedModels.length === 0
-              }
-            >
-              {mutation.isPending ? "Saving…" : "Save changes"}
-            </Button>
-          )}
-        </form.Subscribe>
-        {mutation.isSuccess && !mutation.isPending ? (
-          <span className="text-xs text-muted-foreground">Saved</span>
-        ) : null}
-      </div>
-    </form>
+    <div className="max-w-xl space-y-2">
+      <label htmlFor="ttsModel" className="text-sm font-medium">
+        Default speech model
+      </label>
+      {downloadedModels.length > 0 ? (
+        <div className="flex items-center gap-3">
+          <Select
+            value={ttsModel}
+            onValueChange={(value) => {
+              const nextModel = value as string
+              setTtsModel(nextModel)
+              mutation.mutate({ general: { ttsModel: nextModel } })
+            }}
+            disabled={mutation.isPending}
+          >
+            <SelectTrigger id="ttsModel" className="w-72 max-w-full">
+              <SelectValue placeholder="Select a model">
+                {(value: string) =>
+                  downloadedModels.find((model) => model.id === value)?.name ??
+                  "Select a model"
+                }
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent align="start" alignItemWithTrigger={false}>
+              {downloadedModels.map((model) => (
+                <SelectItem key={model.id} value={model.id}>
+                  {model.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {mutation.isPending ? (
+            <span className="text-xs text-muted-foreground">Saving…</span>
+          ) : mutation.isError ? (
+            <span className="text-xs text-destructive">Couldn’t save</span>
+          ) : mutation.isSuccess ? (
+            <span className="text-xs text-muted-foreground">Saved</span>
+          ) : null}
+        </div>
+      ) : (
+        <p className="rounded-lg border border-border bg-card/40 px-3 py-2 text-xs text-muted-foreground">
+          No models downloaded yet.{" "}
+          <Link to="/models" className="text-primary hover:underline">
+            Download a model
+          </Link>{" "}
+          to select it here.
+        </p>
+      )}
+      <p className="text-xs text-muted-foreground">
+        The model used for transcription by default. Only downloaded models can
+        be selected.
+      </p>
+    </div>
   )
 }

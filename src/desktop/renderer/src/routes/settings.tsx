@@ -17,7 +17,7 @@ function SettingsPage() {
       </header>
 
       <Tabs defaultValue="general" className="mt-8">
-        <TabsList variant="line" className="w-full justify-start border-b border-border">
+        <TabsList variant="line">
           <TabsTrigger value="general">General</TabsTrigger>
           <TabsTrigger value="auth">Auth</TabsTrigger>
         </TabsList>
