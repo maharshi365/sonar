@@ -30,6 +30,7 @@ pub struct ModelStatus {
     pub filename: String,
     pub size_bytes: u64,
     pub languages: Vec<String>,
+    pub supports_streaming: bool,
     pub recommended: bool,
     /// The full file exists on disk and matches the expected size.
     pub is_downloaded: bool,
@@ -121,6 +122,7 @@ impl Manager {
             filename: model.filename.clone(),
             size_bytes: model.size_bytes,
             languages: model.languages.clone(),
+            supports_streaming: model.supports_streaming,
             recommended: model.recommended,
             is_downloaded,
             is_downloading: self.is_downloading(&model.id),

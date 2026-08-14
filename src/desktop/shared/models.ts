@@ -14,6 +14,7 @@ export interface ModelStatus {
   filename: string
   sizeBytes: number
   languages: string[]
+  supportsStreaming: boolean
   recommended: boolean
   isDownloaded: boolean
   isDownloading: boolean

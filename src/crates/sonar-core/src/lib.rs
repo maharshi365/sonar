@@ -26,6 +26,7 @@ pub struct JsModelStatus {
     // for ergonomic numbers on the JS side.
     pub size_bytes: f64,
     pub languages: Vec<String>,
+    pub supports_streaming: bool,
     pub recommended: bool,
     pub is_downloaded: bool,
     pub is_downloading: bool,
@@ -41,6 +42,7 @@ impl From<ModelStatus> for JsModelStatus {
             filename: s.filename,
             size_bytes: s.size_bytes.to_f64().unwrap_or(f64::MAX),
             languages: s.languages,
+            supports_streaming: s.supports_streaming,
             recommended: s.recommended,
             is_downloaded: s.is_downloaded,
             is_downloading: s.is_downloading,

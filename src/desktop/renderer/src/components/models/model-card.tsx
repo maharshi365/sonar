@@ -1,4 +1,15 @@
-import { Check, Download, Loader2, Trash2, X } from "lucide-react"
+import {
+  AudioWaveform,
+  Clock3,
+  Download,
+  HardDrive,
+  Languages,
+  Loader2,
+  Radio,
+  Star,
+  Trash2,
+  X,
+} from "lucide-react"
 
 import type { ModelStatus } from "../../../../shared/models"
 import type { ModelProgress } from "@/hooks/use-models"
@@ -16,6 +27,16 @@ function formatSpeed(bytesPerSecond: number): string {
   if (bytesPerSecond <= 0) return ""
   const mbps = bytesPerSecond / 1e6
   return `${mbps.toFixed(1)} MB/s`
+}
+
+function formatLanguages(languages: string[]): string {
+  return languages
+    .map((language) => {
+      if (language === "en") return "English"
+      if (language === "multilingual") return "Multilingual"
+      return language.toUpperCase()
+    })
+    .join(", ")
 }
 
 export function ModelCard({
@@ -38,31 +59,19 @@ export function ModelCard({
   const speed = progress ? formatSpeed(progress.bytesPerSecond) : ""
 
   return (
-    <div className="rounded-xl border border-border bg-card/40 p-4">
+    <div className="rounded-lg border border-border bg-card/40 p-3">
       <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <h3 className="truncate text-sm font-semibold">{model.name}</h3>
-            {model.recommended ? (
-              <span className="rounded-full border border-primary/40 bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
-                Recommended
-              </span>
-            ) : null}
-            {model.isDownloaded ? (
-              <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-500">
-                <Check className="size-3" /> Installed
-              </span>
-            ) : null}
+        <div className="flex min-w-0 gap-2.5">
+          <div className="grid size-8 shrink-0 place-items-center rounded-md border border-border bg-secondary text-primary">
+            <AudioWaveform className="size-4" />
           </div>
-          <p className="mt-1 text-xs text-muted-foreground">
-            {model.description}
-          </p>
-          <p className="mt-1 text-[11px] text-muted-foreground/80">
-            {formatBytes(model.sizeBytes)}
-            {model.languages.length > 0
-              ? ` · ${model.languages.join(", ")}`
-              : ""}
-          </p>
+
+          <div className="min-w-0">
+            <h3 className="truncate text-sm font-semibold">{model.name}</h3>
+            <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">
+              {model.description}
+            </p>
+          </div>
         </div>
 
         <div className="flex shrink-0 items-center gap-2">
@@ -80,6 +89,44 @@ export function ModelCard({
             </Button>
           )}
         </div>
+      </div>
+
+      <div className="mt-2 flex items-end gap-2">
+        <div className="flex flex-1 flex-wrap items-center gap-2 text-[11px]">
+          <span
+            className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 font-medium ${
+              model.supportsStreaming
+                ? "border-cyan-500/40 bg-cyan-500/10 text-cyan-600 dark:text-cyan-400"
+                : "border-border bg-secondary text-muted-foreground"
+            }`}
+          >
+            {model.supportsStreaming ? (
+              <Radio className="size-3.5" />
+            ) : (
+              <Clock3 className="size-3.5" />
+            )}
+            {model.supportsStreaming ? "Live streaming" : "Transcribes on stop"}
+          </span>
+          <span className="inline-flex items-center gap-1.5 px-1 text-muted-foreground">
+            <HardDrive className="size-3.5" />
+            {formatBytes(model.sizeBytes)}
+          </span>
+          {model.languages.length > 0 ? (
+            <span className="inline-flex items-center gap-1.5 px-1 text-muted-foreground">
+              <Languages className="size-3.5" />
+              {formatLanguages(model.languages)}
+            </span>
+          ) : null}
+        </div>
+        {model.recommended ? (
+          <span
+            className="shrink-0 pb-1 text-primary"
+            title="Recommended model"
+            aria-label="Recommended model"
+          >
+            <Star className="size-4 fill-primary/20" />
+          </span>
+        ) : null}
       </div>
 
       {isDownloading ? (

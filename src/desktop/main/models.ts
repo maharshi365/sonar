@@ -3,6 +3,7 @@ import { app, BrowserWindow } from "electron"
 
 // The native Rust addon. Only the main process may load it.
 import * as core from "@sonar/core"
+import catalog from "../../crates/sonar-models/catalog.json"
 
 import { IpcChannels } from "../shared/ipc"
 import type { ModelDownloadProgress, ModelStatus } from "../shared/models"
@@ -21,6 +22,10 @@ import { loadSettings, saveSettings } from "./settings-store"
  */
 
 let initialized = false
+
+const streamingSupport = new Map(
+  catalog.models.map((model) => [model.id, model.supports_streaming])
+)
 
 /** Directory where model files live. */
 function modelsDir(): string {
@@ -51,7 +56,10 @@ function broadcastProgress(progress: ModelDownloadProgress): void {
 /** List every catalog model with its on-disk status. */
 export function listModels(): ModelStatus[] {
   ensureInitialized()
-  return core.listModels()
+  return core.listModels().map((model) => ({
+    ...model,
+    supportsStreaming: streamingSupport.get(model.id) ?? false,
+  }))
 }
 
 /**

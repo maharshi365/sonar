@@ -22,6 +22,7 @@ pub struct CatalogModel {
     pub size_bytes: u64,
     #[serde(default)]
     pub languages: Vec<String>,
+    pub supports_streaming: bool,
     #[serde(default)]
     pub recommended: bool,
 }

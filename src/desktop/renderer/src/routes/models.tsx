@@ -51,19 +51,21 @@ function ModelsPage() {
           {installed.length > 0 ? (
             <section className="space-y-3">
               <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Your models
+                Your installed models
               </h2>
-              {installed.map((model) => (
-                <ModelCard
-                  key={model.id}
-                  model={model}
-                  progress={progress[model.id]}
-                  error={errors[model.id]}
-                  onDownload={() => void download(model.id)}
-                  onCancel={() => void cancel(model.id)}
-                  onRemove={() => void remove(model.id)}
-                />
-              ))}
+              <div className="grid gap-3 md:grid-cols-2">
+                {installed.map((model) => (
+                  <ModelCard
+                    key={model.id}
+                    model={model}
+                    progress={progress[model.id]}
+                    error={errors[model.id]}
+                    onDownload={() => void download(model.id)}
+                    onCancel={() => void cancel(model.id)}
+                    onRemove={() => void remove(model.id)}
+                  />
+                ))}
+              </div>
             </section>
           ) : null}
 
@@ -72,17 +74,19 @@ function ModelsPage() {
               Available models
             </h2>
             {available.length > 0 ? (
-              available.map((model) => (
-                <ModelCard
-                  key={model.id}
-                  model={model}
-                  progress={progress[model.id]}
-                  error={errors[model.id]}
-                  onDownload={() => void download(model.id)}
-                  onCancel={() => void cancel(model.id)}
-                  onRemove={() => void remove(model.id)}
-                />
-              ))
+              <div className="grid gap-3 md:grid-cols-2">
+                {available.map((model) => (
+                  <ModelCard
+                    key={model.id}
+                    model={model}
+                    progress={progress[model.id]}
+                    error={errors[model.id]}
+                    onDownload={() => void download(model.id)}
+                    onCancel={() => void cancel(model.id)}
+                    onRemove={() => void remove(model.id)}
+                  />
+                ))}
+              </div>
             ) : (
               <div className="flex items-center gap-2 rounded-xl border border-border bg-card/20 p-6 text-sm text-muted-foreground">
                 <Box className="size-4" />

@@ -9,6 +9,7 @@
       "filename": "moonshine-streaming-tiny-Q8_0.gguf",
       "size_bytes": 50462816,
       "languages": ["en"],
+      "supports_streaming": true,
       "recommended": true
     },
     {
@@ -19,6 +20,7 @@
       "filename": "moonshine-streaming-small-Q8_0.gguf",
       "size_bytes": 198506848,
       "languages": ["en"],
+      "supports_streaming": true,
       "recommended": false
     },
     {
@@ -29,6 +31,7 @@
       "filename": "moonshine-streaming-medium-Q8_0.gguf",
       "size_bytes": 295793568,
       "languages": ["en"],
+      "supports_streaming": true,
       "recommended": false
     },
     {
@@ -39,6 +42,7 @@
       "filename": "whisper-base-Q8_0.gguf",
       "size_bytes": 84962880,
       "languages": ["multilingual"],
+      "supports_streaming": false,
       "recommended": false
     },
     {
@@ -49,6 +53,7 @@
       "filename": "whisper-small-Q8_0.gguf",
       "size_bytes": 269751136,
       "languages": ["multilingual"],
+      "supports_streaming": false,
       "recommended": false
     },
     {
@@ -59,6 +64,7 @@
       "filename": "whisper-large-v3-turbo-Q8_0.gguf",
       "size_bytes": 886381760,
       "languages": ["multilingual"],
+      "supports_streaming": false,
       "recommended": false
     }
   ]
