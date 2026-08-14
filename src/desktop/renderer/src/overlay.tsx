@@ -1,8 +1,8 @@
-import { ChevronUp, Minimize2 } from "lucide-react"
+import { ChevronUp, Loader2, Minimize2 } from "lucide-react"
 import { StrictMode, useEffect, useRef, useState } from "react"
 import { createRoot } from "react-dom/client"
 
-import type { StreamText } from "../../shared/transcription"
+import type { StreamText, TranscriptionState } from "../../shared/transcription"
 import "@/styles/globals.css"
 import "@/styles/overlay.css"
 
@@ -50,6 +50,7 @@ function Overlay() {
   const [text, setText] = useState<StreamText>({ committed: "", tentative: "" })
   const [levels, setLevels] = useState<number[]>(() => new Array(BAR_COUNT).fill(0))
   const [expanded, setExpanded] = useState(false)
+  const [state, setState] = useState<TranscriptionState>("idle")
   const scrollRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -57,8 +58,9 @@ function Overlay() {
     const offLevels = window.sonar.transcription.onLevels((next) => {
       setLevels(next.length ? next : new Array(BAR_COUNT).fill(0))
     })
-    const offState = window.sonar.transcription.onState((recording) => {
-      if (recording) {
+    const offState = window.sonar.transcription.onState((nextState) => {
+      setState(nextState)
+      if (nextState === "recording") {
         setText({ committed: "", tentative: "" })
         setLevels(new Array(BAR_COUNT).fill(0))
         setExpanded(false)
@@ -75,9 +77,12 @@ function Overlay() {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight })
   }, [text])
 
-  const displayText = text.committed || text.tentative
+  const transcribing = state === "transcribing"
+  const hasText = Boolean(text.committed || text.tentative)
+  const panelOpen = expanded || hasText
+  const displayText = hasText
     ? text
-    : { committed: "Listening...", tentative: "" }
+    : { committed: transcribing ? "Transcribing..." : "Listening...", tentative: "" }
   const previewingLevels = !levels.some(Boolean)
   const displayLevels = !previewingLevels
     ? levels
@@ -86,13 +91,16 @@ function Overlay() {
   return (
     <main className="overlay-stage">
       <section
-        className={`overlay-dock overlay-dock--rail ${expanded ? "is-expanded" : ""}`}
+        className={`overlay-dock overlay-dock--rail ${panelOpen ? "is-expanded" : ""} ${transcribing ? "is-transcribing" : ""}`}
       >
-        <div className="overlay-expanded-panel" aria-hidden={!expanded}>
+        <div className="overlay-expanded-panel" aria-hidden={!panelOpen}>
           <header>
             <div>
               <span className="overlay-eyebrow">Live transcript</span>
-              <span className="overlay-status"><i /> Recording</span>
+              <span className="overlay-status">
+                {transcribing ? <Loader2 className="overlay-spinner" /> : <i />}
+                {transcribing ? "Transcribing" : "Recording"}
+              </span>
             </div>
             <button
               type="button"
@@ -109,19 +117,28 @@ function Overlay() {
         </div>
 
         <div className="overlay-compact-row">
-          <span className="overlay-recording-dot" aria-label="Recording" />
-          <Waveform levels={displayLevels} previewing={previewingLevels} />
-          <div className="overlay-peek" aria-hidden={expanded}>
-            <TranscriptTail text={displayText} />
-          </div>
-          <button
-            type="button"
-            className="overlay-expand-button"
-            aria-label="Expand transcript"
-            onClick={() => setExpanded(true)}
-          >
-            <ChevronUp size={16} strokeWidth={2} />
-          </button>
+          {transcribing ? (
+            <div className="overlay-working" role="status">
+              <Loader2 className="overlay-spinner" />
+              <span>Transcribing...</span>
+            </div>
+          ) : (
+            <>
+              <span className="overlay-recording-dot" aria-label="Recording" />
+              <Waveform levels={displayLevels} previewing={previewingLevels} />
+              <div className="overlay-peek" aria-hidden={expanded}>
+                <TranscriptTail text={displayText} />
+              </div>
+              <button
+                type="button"
+                className="overlay-expand-button"
+                aria-label="Expand transcript"
+                onClick={() => setExpanded(true)}
+              >
+                <ChevronUp size={16} strokeWidth={2} />
+              </button>
+            </>
+          )}
         </div>
       </section>
     </main>

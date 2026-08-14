@@ -3,7 +3,7 @@ import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron"
 import { IpcChannels } from "../shared/ipc"
 import type { ModelDownloadProgress, ModelStatus } from "../shared/models"
 import type { Settings } from "../shared/settings"
-import type { StreamText } from "../shared/transcription"
+import type { StreamText, TranscriptionState } from "../shared/transcription"
 
 contextBridge.exposeInMainWorld("sonar", {
   platform: process.platform,
@@ -58,10 +58,10 @@ contextBridge.exposeInMainWorld("sonar", {
     cancel: (): Promise<void> =>
       ipcRenderer.invoke(IpcChannels.transcriptionCancel),
 
-    /** Subscribe to recording state changes. Returns an unsubscribe fn. */
-    onState: (callback: (recording: boolean) => void): (() => void) => {
-      const listener = (_e: IpcRendererEvent, recording: boolean): void =>
-        callback(recording)
+    /** Subscribe to lifecycle state changes. Returns an unsubscribe fn. */
+    onState: (callback: (state: TranscriptionState) => void): (() => void) => {
+      const listener = (_e: IpcRendererEvent, state: TranscriptionState): void =>
+        callback(state)
       ipcRenderer.on(IpcChannels.transcriptionState, listener)
       return () =>
         ipcRenderer.removeListener(IpcChannels.transcriptionState, listener)

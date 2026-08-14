@@ -69,6 +69,28 @@ body:has(#overlay-root) {
   width: 6px;
 }
 
+.overlay-working {
+  align-items: center;
+  display: flex;
+  font-size: 12px;
+  font-weight: 550;
+  gap: 8px;
+  justify-content: center;
+  width: 100%;
+}
+
+.overlay-spinner {
+  animation: overlay-spin 800ms linear infinite;
+  height: 13px;
+  width: 13px;
+}
+
+@keyframes overlay-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .overlay-waveform {
   align-items: center;
   display: flex;
@@ -235,8 +257,11 @@ body:has(#overlay-root) {
 }
 
 .overlay-status {
+  align-items: center;
   color: oklch(0.66 0.01 280);
+  display: flex;
   font-size: 10px;
+  gap: 5px;
 }
 
 .overlay-status i {
@@ -285,6 +310,14 @@ body:has(#overlay-root) {
   height: 34px;
   padding: 0 12px;
   width: 103px;
+}
+
+.overlay-dock--rail.is-transcribing:not(.is-expanded),
+.overlay-dock--rail.is-transcribing:not(.is-expanded) .overlay-compact-row,
+.overlay-dock--rail.is-transcribing:not(.is-expanded):hover,
+.overlay-dock--rail.is-transcribing:not(.is-expanded):hover .overlay-compact-row {
+  height: 34px;
+  width: 154px;
 }
 
 .overlay-dock--rail:not(.is-expanded):hover .overlay-compact-row {

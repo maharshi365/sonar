@@ -2,7 +2,7 @@
 
 import type { ModelDownloadProgress, ModelStatus } from "../../shared/models"
 import type { Settings } from "../../shared/settings"
-import type { StreamText } from "../../shared/transcription"
+import type { StreamText, TranscriptionState } from "../../shared/transcription"
 
 declare global {
   interface Window {
@@ -26,7 +26,7 @@ declare global {
         start: () => Promise<void>
         stop: () => Promise<string>
         cancel: () => Promise<void>
-        onState: (callback: (recording: boolean) => void) => () => void
+        onState: (callback: (state: TranscriptionState) => void) => () => void
         onText: (callback: (text: StreamText) => void) => () => void
         onLevels: (callback: (levels: number[]) => void) => () => void
         onResult: (callback: (text: string) => void) => () => void

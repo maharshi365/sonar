@@ -13,5 +13,5 @@ export interface StreamText {
   tentative: string
 }
 
-/** Recording lifecycle state pushed to renderers. */
-export type TranscriptionState = boolean
+/** Transcription lifecycle state pushed to renderers. */
+export type TranscriptionState = "idle" | "recording" | "transcribing"

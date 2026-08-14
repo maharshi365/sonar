@@ -31,7 +31,7 @@ export const IpcChannels = {
   /** Cancel an in-flight recording (renderer -> main). */
   transcriptionCancel: "transcription:cancel",
 
-  /** Main -> renderer: recording state changed. Payload: boolean. */
+  /** Main -> renderer: transcription lifecycle state changed. */
   transcriptionState: "transcription:state",
   /** Main -> renderer: live text update. Payload: { committed, tentative }. */
   transcriptionText: "transcription:text",

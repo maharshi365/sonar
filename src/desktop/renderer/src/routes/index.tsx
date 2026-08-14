@@ -3,27 +3,28 @@ import { useEffect, useState } from "react"
 import { Loader2, Mic, ShieldCheck, Square, Waves } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
+import type { TranscriptionState } from "../../../shared/transcription"
 
 export const Route = createFileRoute("/")({
   component: HomePage,
 })
 
 function HomePage() {
-  const [recording, setRecording] = useState(false)
+  const [state, setState] = useState<TranscriptionState>("idle")
   const [transcript, setTranscript] = useState("")
   const [live, setLive] = useState("")
   const [error, setError] = useState("")
   const [busy, setBusy] = useState(false)
 
   useEffect(() => {
-    const offState = window.sonar.transcription.onState((isRecording) => {
-      setRecording(isRecording)
-      if (isRecording) {
+    const offState = window.sonar.transcription.onState((nextState) => {
+      setState(nextState)
+      if (nextState === "recording") {
         setLive("")
         setTranscript("")
         setError("")
       }
-      setBusy(false)
+      setBusy(nextState === "transcribing")
     })
     const offText = window.sonar.transcription.onText((text) => {
       setLive(text.committed + text.tentative)
@@ -44,6 +45,9 @@ function HomePage() {
       offError()
     }
   }, [])
+
+  const recording = state === "recording"
+  const transcribing = state === "transcribing"
 
   const toggle = async () => {
     setError("")
@@ -69,7 +73,13 @@ function HomePage() {
           <Button
             className="relative size-24 rounded-full shadow-[0_0_50px_-12px_var(--primary)]"
             size="icon"
-            aria-label={recording ? "Stop recording" : "Start recording"}
+            aria-label={
+              recording
+                ? "Stop recording"
+                : transcribing
+                  ? "Transcribing"
+                  : "Start recording"
+            }
             variant={recording ? "destructive" : "default"}
             onClick={toggle}
             disabled={busy}
@@ -84,7 +94,11 @@ function HomePage() {
           </Button>
         </div>
         <h2 className="text-lg font-medium">
-          {recording ? "Listening… press to stop" : "Press to start speaking"}
+          {recording
+            ? "Listening… press to stop"
+            : transcribing
+              ? "Transcribing…"
+              : "Press to start speaking"}
         </h2>
         <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
           <kbd className="rounded border border-border bg-secondary px-2 py-1 font-mono text-foreground">Ctrl</kbd>

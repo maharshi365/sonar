@@ -4,7 +4,7 @@ import { BrowserWindow } from "electron"
 import * as core from "@sonar/core"
 
 import { IpcChannels } from "../shared/ipc"
-import type { StreamText } from "../shared/transcription"
+import type { StreamText, TranscriptionState } from "../shared/transcription"
 import { ensureModelsInitialized, listModels } from "./models"
 import { hideOverlay, sendToOverlay, showOverlay } from "./overlay"
 import { getCachedSettings, loadSettings } from "./settings-store"
@@ -14,11 +14,11 @@ import { getCachedSettings, loadSettings } from "./settings-store"
  *
  * Bridges the Rust pipeline (`@sonar/core`) to the UI: resolves the selected
  * model, starts/stops recording, and forwards live text + audio levels to the
- * dock overlay and the main window. Recording state is tracked here so the
+ * dock overlay and the main window. Lifecycle state is tracked here so the
  * global shortcut and the on-screen button share one source of truth.
  */
 
-let recording = false
+let state: TranscriptionState = "idle"
 
 /** Broadcast to every renderer window (main + overlay). */
 function broadcast(channel: string, ...args: unknown[]): void {
@@ -28,7 +28,12 @@ function broadcast(channel: string, ...args: unknown[]): void {
 }
 
 export function isRecording(): boolean {
-  return recording
+  return state === "recording"
+}
+
+function setState(next: TranscriptionState): void {
+  state = next
+  broadcast(IpcChannels.transcriptionState, next)
 }
 
 /** Resolve the selected model's id + filename, or throw a user-facing error. */
@@ -57,7 +62,7 @@ export async function refreshSettingsCache(): Promise<void> {
 
 /** Start a recording + live transcription session. */
 export function startRecording(): void {
-  if (recording) return
+  if (state !== "idle") return
 
   let model: { id: string; filename: string }
   try {
@@ -84,16 +89,14 @@ export function startRecording(): void {
     return
   }
 
-  recording = true
   showOverlay()
-  broadcast(IpcChannels.transcriptionState, true)
+  setState("recording")
 }
 
 /** Stop recording, transcribe, and broadcast the final text. */
 export async function stopRecording(): Promise<string> {
-  if (!recording) return ""
-  recording = false
-  broadcast(IpcChannels.transcriptionState, false)
+  if (state !== "recording") return ""
+  setState("transcribing")
 
   try {
     const text = await core.stopTranscription()
@@ -103,29 +106,30 @@ export async function stopRecording(): Promise<string> {
     broadcast(IpcChannels.transcriptionError, (error as Error).message)
     return ""
   } finally {
+    setState("idle")
     hideOverlay()
   }
 }
 
 /** Cancel an in-flight recording, discarding the transcript. */
 export function cancelRecording(): void {
-  if (!recording) return
-  recording = false
+  if (state !== "recording") return
   try {
     core.cancelTranscription()
   } catch {
     // best-effort
   }
-  broadcast(IpcChannels.transcriptionState, false)
+  setState("idle")
   hideOverlay()
 }
 
 /** Toggle recording; returns the resulting state. */
 export async function toggleRecording(): Promise<boolean> {
-  if (recording) {
+  if (state === "recording") {
     await stopRecording()
     return false
   }
+  if (state === "transcribing") return false
   startRecording()
-  return recording
+  return isRecording()
 }
