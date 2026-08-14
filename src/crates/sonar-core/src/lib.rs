@@ -338,3 +338,14 @@ pub fn cancel_transcription() -> Result<()> {
     pipeline()?.cancel();
     Ok(())
 }
+
+/// Insert text into the currently focused application.
+///
+/// # Errors
+///
+/// Returns an error if clipboard publication or input injection fails.
+#[allow(clippy::needless_pass_by_value)] // N-API owns JavaScript string arguments.
+#[napi]
+pub fn insert_text(text: String) -> Result<()> {
+    sonar_input::insert_text(&text).map_err(Error::from_reason)
+}

@@ -17,7 +17,7 @@ const ACCELERATOR = "CommandOrControl+Shift+Space"
 
 export function registerShortcuts(): void {
   const ok = globalShortcut.register(ACCELERATOR, () => {
-    void toggleRecording()
+    void toggleRecording(true)
   })
   if (!ok) {
     console.error(`Failed to register global shortcut: ${ACCELERATOR}`)

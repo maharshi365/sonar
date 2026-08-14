@@ -3,6 +3,7 @@ members = [
   "sonar-audio",
   "sonar-core",
   "sonar-dictation",
+  "sonar-input",
   "sonar-models",
   "sonar-transcription",
 ]

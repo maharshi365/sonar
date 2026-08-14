@@ -1,4 +1,4 @@
-import { BrowserWindow } from "electron"
+import { BrowserWindow, systemPreferences } from "electron"
 
 // The native Rust addon. Only the main process may load it.
 import * as core from "@sonar/core"
@@ -21,6 +21,7 @@ import { getCachedSettings, loadSettings } from "./settings-store"
 
 let state: TranscriptionState = "idle"
 let activeModelId: string | null = null
+let insertOnComplete = false
 
 /** Broadcast to every renderer window (main + overlay). */
 function broadcast(channel: string, ...args: unknown[]): void {
@@ -63,7 +64,7 @@ export async function refreshSettingsCache(): Promise<void> {
 }
 
 /** Start a recording + live transcription session. */
-export function startRecording(): void {
+export function startRecording(shouldInsert = false): void {
   if (state !== "idle") return
 
   let model: { id: string; filename: string }
@@ -87,6 +88,7 @@ export function startRecording(): void {
       },
     )
     activeModelId = model.id
+    insertOnComplete = shouldInsert
   } catch (error) {
     broadcast(IpcChannels.transcriptionError, (error as Error).message)
     return
@@ -100,6 +102,7 @@ export function startRecording(): void {
 export async function stopRecording(): Promise<string> {
   if (state !== "recording") return ""
   setState("transcribing")
+  const shouldInsert = insertOnComplete
 
   try {
     const text = await core.stopTranscription()
@@ -110,6 +113,23 @@ export async function stopRecording(): Promise<string> {
       } catch (error) {
         console.error("Failed to save transcription history:", error)
       }
+      if (shouldInsert) {
+        try {
+          if (
+            process.platform === "darwin" &&
+            !systemPreferences.isTrustedAccessibilityClient(true)
+          ) {
+            throw new Error(
+              "Accessibility permission is required. Enable Sonar in System Settings > Privacy & Security > Accessibility."
+            )
+          }
+          core.insertText(text)
+        } catch (error) {
+          const message = `Transcription completed, but text insertion failed: ${(error as Error).message}`
+          console.error(message)
+          broadcast(IpcChannels.transcriptionError, message)
+        }
+      }
     }
     broadcast(IpcChannels.transcriptionResult, text)
     return text
@@ -118,6 +138,7 @@ export async function stopRecording(): Promise<string> {
     return ""
   } finally {
     activeModelId = null
+    insertOnComplete = false
     setState("idle")
     hideOverlay()
   }
@@ -133,16 +154,17 @@ export function cancelRecording(): void {
   }
   setState("idle")
   activeModelId = null
+  insertOnComplete = false
   hideOverlay()
 }
 
 /** Toggle recording; returns the resulting state. */
-export async function toggleRecording(): Promise<boolean> {
+export async function toggleRecording(shouldInsert = false): Promise<boolean> {
   if (state === "recording") {
     await stopRecording()
     return false
   }
   if (state === "transcribing") return false
-  startRecording()
+  startRecording(shouldInsert)
   return isRecording()
 }
