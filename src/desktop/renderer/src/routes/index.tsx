@@ -52,7 +52,7 @@ function HomePage() {
   }
 
   return (
-    <>
+    <div className="flex min-h-0 flex-1 flex-col">
       <header>
         <p className="mb-2 text-xs font-medium uppercase tracking-[0.2em] text-primary">Local transcription</p>
         <h1 className="text-3xl font-semibold tracking-tight">Ready when you are.</h1>
@@ -61,7 +61,7 @@ function HomePage() {
         </p>
       </header>
 
-      <section className="mt-20 flex flex-col items-center text-center">
+      <section className="flex flex-1 flex-col items-center justify-center py-12 text-center">
         <div className="relative mb-8">
           <div
             className={`absolute inset-0 scale-150 rounded-full blur-2xl transition-colors ${recording ? "bg-destructive/20" : "bg-primary/10"}`}
@@ -110,10 +110,10 @@ function HomePage() {
         )}
       </section>
 
-      <footer className="mt-20 flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-border pt-5 text-xs text-muted-foreground">
+      <footer className="mt-auto flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-border pt-5 text-xs text-muted-foreground">
         <span className="flex items-center gap-2"><Waves className="size-3.5 text-primary" /> Whisper (whisper.cpp)</span>
         <span className="flex items-center gap-2"><ShieldCheck className="size-3.5" /> Audio stays on this device</span>
       </footer>
-    </>
+    </div>
   )
 }

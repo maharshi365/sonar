@@ -10,7 +10,7 @@ export const Route = createRootRoute({
 function RootLayout() {
   return (
     <AppShell>
-      <div className="min-h-full w-full px-8 py-10 lg:px-12">
+      <div className="flex h-screen min-h-full w-full flex-col px-8 py-10 lg:px-12">
         <Outlet />
       </div>
     </AppShell>
