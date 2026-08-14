@@ -124,10 +124,6 @@ fn stage_transcribe_runtime_libs() -> Result<(), Box<dyn std::error::Error>> {
             std::fs::copy(src, &dest_path)?;
         }
     }
-    let copied = best.len();
-    println!(
-        "cargo:warning=Staged {copied} transcribe-cpp runtime library file(s) into crate root"
-    );
     Ok(())
 }
 
