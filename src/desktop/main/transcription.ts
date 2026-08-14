@@ -5,6 +5,7 @@ import * as core from "@sonar/core"
 
 import { IpcChannels } from "../shared/ipc"
 import type { StreamText, TranscriptionState } from "../shared/transcription"
+import { saveHistoryEntry } from "./history-store"
 import { ensureModelsInitialized, listModels } from "./models"
 import { hideOverlay, sendToOverlay, showOverlay } from "./overlay"
 import { getCachedSettings, loadSettings } from "./settings-store"
@@ -19,6 +20,7 @@ import { getCachedSettings, loadSettings } from "./settings-store"
  */
 
 let state: TranscriptionState = "idle"
+let activeModelId: string | null = null
 
 /** Broadcast to every renderer window (main + overlay). */
 function broadcast(channel: string, ...args: unknown[]): void {
@@ -84,6 +86,7 @@ export function startRecording(): void {
         sendToOverlay(IpcChannels.transcriptionLevels, levels)
       },
     )
+    activeModelId = model.id
   } catch (error) {
     broadcast(IpcChannels.transcriptionError, (error as Error).message)
     return
@@ -100,12 +103,21 @@ export async function stopRecording(): Promise<string> {
 
   try {
     const text = await core.stopTranscription()
+    if (text.trim()) {
+      try {
+        saveHistoryEntry(text, activeModelId ?? "unknown")
+        broadcast(IpcChannels.historyChanged)
+      } catch (error) {
+        console.error("Failed to save transcription history:", error)
+      }
+    }
     broadcast(IpcChannels.transcriptionResult, text)
     return text
   } catch (error) {
     broadcast(IpcChannels.transcriptionError, (error as Error).message)
     return ""
   } finally {
+    activeModelId = null
     setState("idle")
     hideOverlay()
   }
@@ -120,6 +132,7 @@ export function cancelRecording(): void {
     // best-effort
   }
   setState("idle")
+  activeModelId = null
   hideOverlay()
 }
 

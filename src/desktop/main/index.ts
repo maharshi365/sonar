@@ -2,6 +2,7 @@ import { join } from "node:path"
 import { app, BrowserWindow, Menu, shell, type Tray } from "electron"
 
 import { registerIpcHandlers } from "./ipc"
+import { closeHistoryStore } from "./history-store"
 import { getAppIcon } from "./icon"
 import { ensureOverlay } from "./overlay"
 import { registerShortcuts, unregisterShortcuts } from "./shortcuts"
@@ -112,6 +113,7 @@ app.on("before-quit", () => {
 
 app.on("will-quit", () => {
   unregisterShortcuts()
+  closeHistoryStore()
   tray?.destroy()
   tray = null
 })

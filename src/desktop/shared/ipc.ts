@@ -21,6 +21,13 @@ export const IpcChannels = {
    */
   modelsProgress: "models:progress",
 
+  // --- Transcription history ---
+  historyList: "history:list",
+  historyDelete: "history:delete",
+  historyClear: "history:clear",
+  /** Main -> renderer: persisted history changed. */
+  historyChanged: "history:changed",
+
   // --- Live transcription ---
   /** Toggle recording on/off (renderer -> main). Resolves to the new state. */
   transcriptionToggle: "transcription:toggle",

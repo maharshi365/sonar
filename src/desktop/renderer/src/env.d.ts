@@ -1,6 +1,7 @@
 /// <reference types="vite/client" />
 
 import type { ModelDownloadProgress, ModelStatus } from "../../shared/models"
+import type { HistoryPage } from "../../shared/history"
 import type { Settings } from "../../shared/settings"
 import type { StreamText, TranscriptionState } from "../../shared/transcription"
 
@@ -20,6 +21,12 @@ declare global {
         onProgress: (
           callback: (progress: ModelDownloadProgress) => void
         ) => () => void
+      }
+      history: {
+        list: (cursor?: number, limit?: number) => Promise<HistoryPage>
+        delete: (id: number) => Promise<boolean>
+        clear: () => Promise<void>
+        onChanged: (callback: () => void) => () => void
       }
       transcription: {
         toggle: () => Promise<boolean>

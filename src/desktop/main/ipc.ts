@@ -1,6 +1,11 @@
-import { ipcMain } from "electron"
+import { BrowserWindow, ipcMain } from "electron"
 
 import { IpcChannels } from "../shared/ipc"
+import {
+  clearHistory,
+  deleteHistoryEntry,
+  listHistoryEntries,
+} from "./history-store"
 import {
   cancelDownload,
   downloadModel,
@@ -42,9 +47,47 @@ export function registerIpcHandlers(): void {
     removeModel(modelId)
   )
 
+  // Transcription history.
+  ipcMain.handle(
+    IpcChannels.historyList,
+    (_event, cursor?: unknown, limit?: unknown) =>
+      listHistoryEntries(
+        optionalPositiveInteger(cursor, "cursor"),
+        optionalPositiveInteger(limit, "limit")
+      )
+  )
+  ipcMain.handle(IpcChannels.historyDelete, (_event, id: number) => {
+    if (!Number.isSafeInteger(id) || id <= 0) {
+      throw new Error("Invalid history entry id")
+    }
+    const deleted = deleteHistoryEntry(id)
+    if (deleted) broadcastHistoryChanged()
+    return deleted
+  })
+  ipcMain.handle(IpcChannels.historyClear, () => {
+    clearHistory()
+    broadcastHistoryChanged()
+  })
+
   // Live transcription.
   ipcMain.handle(IpcChannels.transcriptionToggle, () => toggleRecording())
   ipcMain.handle(IpcChannels.transcriptionStart, () => startRecording())
   ipcMain.handle(IpcChannels.transcriptionStop, () => stopRecording())
   ipcMain.handle(IpcChannels.transcriptionCancel, () => cancelRecording())
+}
+
+function broadcastHistoryChanged(): void {
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (!window.isDestroyed()) {
+      window.webContents.send(IpcChannels.historyChanged)
+    }
+  }
+}
+
+function optionalPositiveInteger(value: unknown, name: string): number | undefined {
+  if (value === undefined) return undefined
+  if (!Number.isSafeInteger(value) || (value as number) <= 0) {
+    throw new Error(`Invalid history ${name}`)
+  }
+  return value as number
 }

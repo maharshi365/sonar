@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron"
 
 import { IpcChannels } from "../shared/ipc"
+import type { HistoryPage } from "../shared/history"
 import type { ModelDownloadProgress, ModelStatus } from "../shared/models"
 import type { Settings } from "../shared/settings"
 import type { StreamText, TranscriptionState } from "../shared/transcription"
@@ -42,6 +43,18 @@ contextBridge.exposeInMainWorld("sonar", {
       ): void => callback(progress)
       ipcRenderer.on(IpcChannels.modelsProgress, listener)
       return () => ipcRenderer.removeListener(IpcChannels.modelsProgress, listener)
+    },
+  },
+  history: {
+    list: (cursor?: number, limit?: number): Promise<HistoryPage> =>
+      ipcRenderer.invoke(IpcChannels.historyList, cursor, limit),
+    delete: (id: number): Promise<boolean> =>
+      ipcRenderer.invoke(IpcChannels.historyDelete, id),
+    clear: (): Promise<void> => ipcRenderer.invoke(IpcChannels.historyClear),
+    onChanged: (callback: () => void): (() => void) => {
+      const listener = (): void => callback()
+      ipcRenderer.on(IpcChannels.historyChanged, listener)
+      return () => ipcRenderer.removeListener(IpcChannels.historyChanged, listener)
     },
   },
   transcription: {
