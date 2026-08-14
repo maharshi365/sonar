@@ -18,6 +18,7 @@ import {
   SidebarTrigger,
 } from "@/components/ui/sidebar"
 import { TooltipProvider } from "@/components/ui/tooltip"
+import sonarIcon from "../../../../../build/icon.svg"
 
 const navigation = [
   { label: "Transcribe", to: "/", icon: AudioLines, exact: true },
@@ -36,9 +37,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <Sidebar collapsible="icon">
           <SidebarHeader className="h-16 flex-row items-center px-3">
             <div className="flex min-w-0 flex-1 items-center gap-3 overflow-hidden px-1 group-data-[collapsible=icon]:hidden">
-              <div className="grid size-8 shrink-0 place-items-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground shadow-[0_0_24px_-6px_var(--sidebar-primary)]">
-                <AudioLines className="size-4" />
-              </div>
+              <img className="size-8 shrink-0" src={sonarIcon} alt="" />
               <span className="truncate text-sm font-semibold tracking-wide">
                 SONAR
               </span>

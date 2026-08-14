@@ -68,10 +68,15 @@
     ],
     "mac": {
       "category": "public.app-category.productivity",
+      "icon": "build/icon.svg",
       "target": "dmg"
     },
     "win": {
+      "icon": "build/icon.svg",
       "target": "nsis"
+    },
+    "linux": {
+      "icon": "build/icon.svg"
     }
   }
 }

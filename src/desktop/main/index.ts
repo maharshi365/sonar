@@ -1,14 +1,28 @@
 import { join } from "node:path"
-import { app, BrowserWindow, Menu, shell } from "electron"
+import { app, BrowserWindow, Menu, shell, type Tray } from "electron"
 
 import { registerIpcHandlers } from "./ipc"
+import { getAppIcon } from "./icon"
 import { ensureOverlay } from "./overlay"
 import { registerShortcuts, unregisterShortcuts } from "./shortcuts"
+import { enableLaunchAtLogin, wasStartedInBackground } from "./startup"
 import { refreshSettingsCache } from "./transcription"
+import { createTray } from "./tray"
 
-function createWindow(): void {
+let isQuitting = false
+let mainWindow: BrowserWindow | null = null
+let tray: Tray | null = null
+
+function hideWindow(): void {
+  mainWindow?.hide()
+  app.dock?.hide()
+}
+
+function createWindow(show = true): BrowserWindow {
   const window = new BrowserWindow({
     title: "Sonar",
+    icon: getAppIcon(),
+    show,
     width: 1120,
     height: 760,
     minWidth: 760,
@@ -22,11 +36,21 @@ function createWindow(): void {
     },
   })
 
-  Menu.setApplicationMenu(null)
-
   window.webContents.setWindowOpenHandler(({ url }) => {
     void shell.openExternal(url)
     return { action: "deny" }
+  })
+
+  window.on("minimize", hideWindow)
+
+  window.on("close", (event) => {
+    if (isQuitting) return
+    event.preventDefault()
+    hideWindow()
+  })
+
+  window.on("closed", () => {
+    if (mainWindow === window) mainWindow = null
   })
 
   if (process.env.ELECTRON_RENDERER_URL) {
@@ -34,26 +58,60 @@ function createWindow(): void {
   } else {
     void window.loadFile(join(__dirname, "../renderer/index.html"))
   }
+
+  mainWindow = window
+  return window
 }
 
-void app.whenReady().then(() => {
-  registerIpcHandlers()
-  registerShortcuts()
-  createWindow()
-  // Pre-create the (hidden) dock overlay so it appears instantly on first use.
-  ensureOverlay()
-  // Warm the settings cache so the first recording sees the selected model.
-  void refreshSettingsCache()
+function showWindow(): void {
+  const window = mainWindow && !mainWindow.isDestroyed() ? mainWindow : createWindow(false)
+  if (app.dock) void app.dock.show()
+  if (window.isMinimized()) window.restore()
+  window.show()
+  window.focus()
+}
 
-  app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+if (!app.requestSingleInstanceLock()) {
+  app.quit()
+} else {
+  app.on("second-instance", () => {
+    if (app.isReady()) showWindow()
+    else void app.whenReady().then(showWindow)
   })
+
+  void app.whenReady().then(() => {
+    registerIpcHandlers()
+    registerShortcuts()
+    Menu.setApplicationMenu(null)
+
+    const launchHidden = wasStartedInBackground()
+    createWindow(!launchHidden)
+    if (launchHidden) app.dock?.hide()
+
+    tray = createTray(showWindow, () => {
+      isQuitting = true
+      app.quit()
+    })
+
+    void enableLaunchAtLogin().catch((error: unknown) => {
+      console.error("Failed to enable launch at login", error)
+    })
+
+    // Pre-create the (hidden) dock overlay so it appears instantly on first use.
+    ensureOverlay()
+    // Warm the settings cache so the first recording sees the selected model.
+    void refreshSettingsCache()
+
+    app.on("activate", showWindow)
+  })
+}
+
+app.on("before-quit", () => {
+  isQuitting = true
 })
 
 app.on("will-quit", () => {
   unregisterShortcuts()
-})
-
-app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") app.quit()
+  tray?.destroy()
+  tray = null
 })
