@@ -4,8 +4,11 @@
 //! Progress is delivered through a JavaScript callback (a napi
 //! `ThreadsafeFunction`) so the main process can forward it to the renderer.
 
+mod audio;
 mod catalog;
 mod download;
+mod pipeline;
+mod transcription;
 
 use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
@@ -15,6 +18,7 @@ use napi::threadsafe_function::{ErrorStrategy, ThreadsafeFunction, ThreadsafeFun
 use napi_derive::napi;
 
 use download::{DownloadProgress, Manager, ModelStatus};
+use pipeline::{Pipeline, SessionCallbacks};
 
 /// On-disk status of a catalog model, mirrored to TypeScript.
 #[napi(object)]
@@ -89,9 +93,15 @@ pub fn init_models(models_dir: String) -> Result<()> {
     if MANAGER.get().is_some() {
         return Ok(());
     }
-    let mgr = Manager::new(PathBuf::from(models_dir)).map_err(Error::from_reason)?;
+    let dir = PathBuf::from(models_dir);
+    let mgr = Manager::new(dir.clone()).map_err(Error::from_reason)?;
     // If another thread won the race, that's fine — ignore the returned value.
     let _ = MANAGER.set(Arc::new(mgr));
+
+    // Initialize the transcription pipeline against the same models directory.
+    let pl = Pipeline::new();
+    pl.set_models_dir(dir);
+    let _ = PIPELINE.set(Arc::new(pl));
     Ok(())
 }
 
@@ -153,4 +163,117 @@ pub fn cancel_download(model_id: String) -> Result<bool> {
 pub async fn remove_model(model_id: String) -> Result<()> {
     let mgr = manager()?;
     mgr.remove(&model_id).await.map_err(Error::from_reason)
+}
+
+// ---------------------------------------------------------------------------
+// Live transcription pipeline
+// ---------------------------------------------------------------------------
+
+/// Process-wide transcription pipeline (microphone + streaming STT).
+static PIPELINE: OnceLock<Arc<Pipeline>> = OnceLock::new();
+
+fn pipeline() -> Result<Arc<Pipeline>> {
+    PIPELINE
+        .get()
+        .cloned()
+        .ok_or_else(|| Error::from_reason("pipeline not initialized; call initModels first"))
+}
+
+/// Live text snapshot delivered to the JS stream callback while recording.
+#[napi(object)]
+pub struct JsStreamText {
+    /// Append-only, flicker-free prefix.
+    pub committed: String,
+    /// Volatile suffix the model may still rewrite.
+    pub tentative: String,
+}
+
+/// Preload a model into memory without recording. `filename` is the model file
+/// within the models directory (e.g. `ggml-base.bin`).
+#[napi]
+pub fn load_model(model_id: String, filename: String) -> Result<()> {
+    let pl = pipeline()?;
+    pl.load_model(&model_id, &filename)
+        .map_err(Error::from_reason)
+}
+
+/// Unload the currently loaded model, freeing memory.
+#[napi]
+pub fn unload_model() -> Result<()> {
+    pipeline()?.unload_model();
+    Ok(())
+}
+
+/// Whether a recording session is currently in progress.
+#[napi]
+pub fn is_recording() -> Result<bool> {
+    Ok(pipeline()?.is_recording())
+}
+
+/// The id of the currently loaded model, if any.
+#[napi]
+pub fn current_model() -> Result<Option<String>> {
+    Ok(pipeline()?.current_model_id())
+}
+
+/// Start a recording + live transcription session.
+///
+/// `on_text` receives the live committed/tentative text as it evolves;
+/// `on_level` receives 16 audio-spectrum buckets (0..1) for the dock waveform.
+/// Both fire on background threads. Returns once the microphone is capturing.
+#[napi]
+pub fn start_transcription(
+    model_id: String,
+    filename: String,
+    #[napi(ts_arg_type = "(text: JsStreamText) => void")] on_text: JsFunction,
+    #[napi(ts_arg_type = "(levels: number[]) => void")] on_level: JsFunction,
+) -> Result<()> {
+    let pl = pipeline()?;
+
+    let text_tsfn: ThreadsafeFunction<JsStreamText, ErrorStrategy::Fatal> =
+        on_text.create_threadsafe_function(0, |ctx| Ok(vec![ctx.value]))?;
+    let level_tsfn: ThreadsafeFunction<Vec<f64>, ErrorStrategy::Fatal> =
+        on_level.create_threadsafe_function(0, |ctx| Ok(vec![ctx.value]))?;
+
+    let callbacks = SessionCallbacks {
+        on_text: Arc::new(move |text| {
+            text_tsfn.call(
+                JsStreamText {
+                    committed: text.committed,
+                    tentative: text.tentative,
+                },
+                ThreadsafeFunctionCallMode::NonBlocking,
+            );
+        }),
+        on_level: Arc::new(move |buckets| {
+            let levels: Vec<f64> = buckets.into_iter().map(f64::from).collect();
+            level_tsfn.call(levels, ThreadsafeFunctionCallMode::NonBlocking);
+        }),
+    };
+
+    pl.start(&model_id, &filename, callbacks)
+        .map_err(Error::from_reason)
+}
+
+/// Stop recording and resolve with the final transcript.
+#[napi(ts_return_type = "Promise<string>")]
+pub fn stop_transcription(env: Env) -> Result<napi::JsObject> {
+    let pl = pipeline()?;
+    let (deferred, promise) = env.create_deferred()?;
+
+    // stop() blocks on stream finalize / batch inference; run it off the JS
+    // thread so the main process stays responsive.
+    napi::tokio::task::spawn_blocking(move || match pl.stop() {
+        Ok(text) => deferred.resolve(move |_| Ok(text)),
+        Err(e) => deferred.reject(Error::from_reason(e)),
+    });
+
+    Ok(promise)
+}
+
+/// Cancel an in-flight recording, discarding any transcript.
+#[napi]
+pub fn cancel_transcription() -> Result<()> {
+    pipeline()?.cancel();
+    Ok(())
 }

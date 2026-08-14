@@ -34,6 +34,11 @@ function ensureInitialized(): void {
   initialized = true
 }
 
+/** Public alias so other main-process modules can force init. Idempotent. */
+export function ensureModelsInitialized(): void {
+  ensureInitialized()
+}
+
 /** Broadcast a download-progress event to every open window. */
 function broadcastProgress(progress: ModelDownloadProgress): void {
   for (const window of BrowserWindow.getAllWindows()) {

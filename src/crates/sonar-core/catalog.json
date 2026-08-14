@@ -1,55 +1,65 @@
 {
-  "catalog_version": 1,
+  "catalog_version": 2,
   "models": [
     {
-      "id": "whisper-tiny",
-      "name": "Whisper Tiny",
-      "description": "Smallest multilingual model. Fastest, lowest accuracy. Good for quick tests.",
-      "repo_id": "ggerganov/whisper.cpp",
-      "filename": "ggml-tiny.bin",
-      "size_bytes": 77691713,
-      "languages": ["multilingual"],
+      "id": "moonshine-streaming-tiny",
+      "name": "Moonshine Streaming Tiny",
+      "description": "Real-time streaming model. Lowest latency, English. Best for live dictation.",
+      "repo_id": "handy-computer/moonshine-streaming-tiny-gguf",
+      "filename": "moonshine-streaming-tiny-Q8_0.gguf",
+      "size_bytes": 50462816,
+      "languages": ["en"],
+      "recommended": true
+    },
+    {
+      "id": "moonshine-streaming-small",
+      "name": "Moonshine Streaming Small",
+      "description": "Real-time streaming model. More accurate than tiny, English.",
+      "repo_id": "handy-computer/moonshine-streaming-small-gguf",
+      "filename": "moonshine-streaming-small-Q8_0.gguf",
+      "size_bytes": 198506848,
+      "languages": ["en"],
+      "recommended": false
+    },
+    {
+      "id": "moonshine-streaming-medium",
+      "name": "Moonshine Streaming Medium",
+      "description": "Real-time streaming model. Highest streaming accuracy, English.",
+      "repo_id": "handy-computer/moonshine-streaming-medium-gguf",
+      "filename": "moonshine-streaming-medium-Q8_0.gguf",
+      "size_bytes": 295793568,
+      "languages": ["en"],
       "recommended": false
     },
     {
       "id": "whisper-base",
       "name": "Whisper Base",
-      "description": "Small multilingual model. A good balance of speed and accuracy for everyday use.",
-      "repo_id": "ggerganov/whisper.cpp",
-      "filename": "ggml-base.bin",
-      "size_bytes": 147951465,
-      "languages": ["multilingual"],
-      "recommended": true
-    },
-    {
-      "id": "whisper-small",
-      "name": "Whisper Small",
-      "description": "Medium multilingual model. More accurate, moderately slower.",
-      "repo_id": "ggerganov/whisper.cpp",
-      "filename": "ggml-small.bin",
-      "size_bytes": 487601967,
+      "description": "Multilingual, 99 languages. Transcribes on stop (no live preview). Good accuracy.",
+      "repo_id": "handy-computer/whisper-base-gguf",
+      "filename": "whisper-base-Q8_0.gguf",
+      "size_bytes": 84962880,
       "languages": ["multilingual"],
       "recommended": false
     },
     {
-      "id": "whisper-medium",
-      "name": "Whisper Medium",
-      "description": "Large multilingual model. High accuracy, slower and heavier on memory.",
-      "repo_id": "ggerganov/whisper.cpp",
-      "filename": "ggml-medium.bin",
-      "size_bytes": 1533763059,
+      "id": "whisper-small",
+      "name": "Whisper Small",
+      "description": "Multilingual, 99 languages. Transcribes on stop. More accurate, slower.",
+      "repo_id": "handy-computer/whisper-small-gguf",
+      "filename": "whisper-small-Q8_0.gguf",
+      "size_bytes": 269751136,
       "languages": ["multilingual"],
       "recommended": false
     },
     {
       "id": "whisper-large-v3-turbo",
       "name": "Whisper Large v3 Turbo",
-      "description": "Latest large model, optimized for speed. Best accuracy for the price of size.",
-      "repo_id": "ggerganov/whisper.cpp",
-      "filename": "ggml-large-v3-turbo.bin",
-      "size_bytes": 1624555275,
+      "description": "Multilingual, 100 languages. Transcribes on stop. Best accuracy for the size.",
+      "repo_id": "handy-computer/whisper-large-v3-turbo-gguf",
+      "filename": "whisper-large-v3-turbo-Q8_0.gguf",
+      "size_bytes": 886381760,
       "languages": ["multilingual"],
-      "recommended": true
+      "recommended": false
     }
   ]
 }

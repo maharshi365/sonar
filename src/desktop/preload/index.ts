@@ -3,6 +3,7 @@ import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron"
 import { IpcChannels } from "../shared/ipc"
 import type { ModelDownloadProgress, ModelStatus } from "../shared/models"
 import type { Settings } from "../shared/settings"
+import type { StreamText } from "../shared/transcription"
 
 contextBridge.exposeInMainWorld("sonar", {
   platform: process.platform,
@@ -41,6 +42,61 @@ contextBridge.exposeInMainWorld("sonar", {
       ): void => callback(progress)
       ipcRenderer.on(IpcChannels.modelsProgress, listener)
       return () => ipcRenderer.removeListener(IpcChannels.modelsProgress, listener)
+    },
+  },
+  transcription: {
+    /** Toggle recording on/off. Resolves to the resulting state. */
+    toggle: (): Promise<boolean> =>
+      ipcRenderer.invoke(IpcChannels.transcriptionToggle),
+    /** Start recording. */
+    start: (): Promise<void> =>
+      ipcRenderer.invoke(IpcChannels.transcriptionStart),
+    /** Stop recording and transcribe. Resolves to the final text. */
+    stop: (): Promise<string> =>
+      ipcRenderer.invoke(IpcChannels.transcriptionStop),
+    /** Cancel an in-flight recording. */
+    cancel: (): Promise<void> =>
+      ipcRenderer.invoke(IpcChannels.transcriptionCancel),
+
+    /** Subscribe to recording state changes. Returns an unsubscribe fn. */
+    onState: (callback: (recording: boolean) => void): (() => void) => {
+      const listener = (_e: IpcRendererEvent, recording: boolean): void =>
+        callback(recording)
+      ipcRenderer.on(IpcChannels.transcriptionState, listener)
+      return () =>
+        ipcRenderer.removeListener(IpcChannels.transcriptionState, listener)
+    },
+    /** Subscribe to live text updates. Returns an unsubscribe fn. */
+    onText: (callback: (text: StreamText) => void): (() => void) => {
+      const listener = (_e: IpcRendererEvent, text: StreamText): void =>
+        callback(text)
+      ipcRenderer.on(IpcChannels.transcriptionText, listener)
+      return () =>
+        ipcRenderer.removeListener(IpcChannels.transcriptionText, listener)
+    },
+    /** Subscribe to audio level buckets (0..1). Returns an unsubscribe fn. */
+    onLevels: (callback: (levels: number[]) => void): (() => void) => {
+      const listener = (_e: IpcRendererEvent, levels: number[]): void =>
+        callback(levels)
+      ipcRenderer.on(IpcChannels.transcriptionLevels, listener)
+      return () =>
+        ipcRenderer.removeListener(IpcChannels.transcriptionLevels, listener)
+    },
+    /** Subscribe to final transcript results. Returns an unsubscribe fn. */
+    onResult: (callback: (text: string) => void): (() => void) => {
+      const listener = (_e: IpcRendererEvent, text: string): void =>
+        callback(text)
+      ipcRenderer.on(IpcChannels.transcriptionResult, listener)
+      return () =>
+        ipcRenderer.removeListener(IpcChannels.transcriptionResult, listener)
+    },
+    /** Subscribe to transcription errors. Returns an unsubscribe fn. */
+    onError: (callback: (message: string) => void): (() => void) => {
+      const listener = (_e: IpcRendererEvent, message: string): void =>
+        callback(message)
+      ipcRenderer.on(IpcChannels.transcriptionError, listener)
+      return () =>
+        ipcRenderer.removeListener(IpcChannels.transcriptionError, listener)
     },
   },
 })

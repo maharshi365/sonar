@@ -131,6 +131,12 @@
     -webkit-font-smoothing: antialiased;
   }
 
+  /* The dock overlay is a transparent, frameless window; its body must not
+     paint the app background. */
+  body:has(#overlay-root) {
+    background: transparent;
+  }
+
   button,
   a {
     -webkit-app-region: no-drag;

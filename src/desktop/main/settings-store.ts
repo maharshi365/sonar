@@ -55,6 +55,18 @@ export async function loadSettings(): Promise<Settings> {
 }
 
 /**
+ * A synchronous snapshot of the cached settings.
+ *
+ * Returns the in-memory cache when present, or the defaults otherwise. Use this
+ * only on hot paths that can't await (e.g. the recording start path); anything
+ * that must reflect the latest on-disk state should `await loadSettings()`.
+ * Call `loadSettings()` once at startup to warm the cache.
+ */
+export function getCachedSettings(): Settings {
+  return cache ?? { ...defaultSettings }
+}
+
+/**
  * Persist a full or partial settings object. The input is merged over the
  * current settings, re-validated, written to disk, and cached.
  * Returns the resulting validated settings.

@@ -2,6 +2,9 @@ import { join } from "node:path"
 import { app, BrowserWindow, Menu, shell } from "electron"
 
 import { registerIpcHandlers } from "./ipc"
+import { ensureOverlay } from "./overlay"
+import { registerShortcuts, unregisterShortcuts } from "./shortcuts"
+import { refreshSettingsCache } from "./transcription"
 
 function createWindow(): void {
   const window = new BrowserWindow({
@@ -35,11 +38,20 @@ function createWindow(): void {
 
 void app.whenReady().then(() => {
   registerIpcHandlers()
+  registerShortcuts()
   createWindow()
+  // Pre-create the (hidden) dock overlay so it appears instantly on first use.
+  ensureOverlay()
+  // Warm the settings cache so the first recording sees the selected model.
+  void refreshSettingsCache()
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
+})
+
+app.on("will-quit", () => {
+  unregisterShortcuts()
 })
 
 app.on("window-all-closed", () => {
