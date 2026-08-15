@@ -1,5 +1,6 @@
 import * as React from "react"
 import { Input as InputPrimitive } from "@base-ui/react/input"
+import { ChevronDownIcon, ChevronUpIcon } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 
@@ -17,4 +18,51 @@ function Input({ className, type, ...props }: React.ComponentProps<"input">) {
   )
 }
 
-export { Input }
+function NumberInput({
+  className,
+  ...props
+}: Omit<React.ComponentProps<"input">, "type">) {
+  const inputRef = React.useRef<HTMLInputElement>(null)
+
+  const step = (direction: "up" | "down") => {
+    const input = inputRef.current
+    if (!input) return
+    direction === "up" ? input.stepUp() : input.stepDown()
+    input.focus()
+  }
+
+  return (
+    <div className={cn("relative", className)}>
+      <Input
+        ref={inputRef}
+        type="number"
+        className="appearance-none pr-7 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+        {...props}
+      />
+      <div className="absolute inset-y-px right-px flex w-6 flex-col border-l border-input text-muted-foreground">
+        <button
+          type="button"
+          tabIndex={-1}
+          aria-label="Increase value"
+          className="flex min-h-0 flex-1 items-center justify-center hover:bg-muted hover:text-foreground"
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => step("up")}
+        >
+          <ChevronUpIcon className="size-3" />
+        </button>
+        <button
+          type="button"
+          tabIndex={-1}
+          aria-label="Decrease value"
+          className="flex min-h-0 flex-1 items-center justify-center border-t border-input hover:bg-muted hover:text-foreground"
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => step("down")}
+        >
+          <ChevronDownIcon className="size-3" />
+        </button>
+      </div>
+    </div>
+  )
+}
+
+export { Input, NumberInput }

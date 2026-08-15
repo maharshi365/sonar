@@ -34,3 +34,26 @@ pub fn insert_text(text: &str) -> Result<(), String> {
     #[cfg(not(any(windows, target_os = "macos")))]
     Err("text insertion is not implemented on this platform yet".to_string())
 }
+
+/// Send a submit shortcut to the currently focused application.
+///
+/// # Errors
+///
+/// Returns an error when input injection is unsupported or fails.
+#[allow(clippy::needless_return)]
+pub fn submit(key: &str) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        return windows::submit(key);
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        return macos::submit(key);
+    }
+
+    #[cfg(not(any(windows, target_os = "macos")))]
+    Err(format!(
+        "submit shortcut '{key}' is not implemented on this platform yet"
+    ))
+}

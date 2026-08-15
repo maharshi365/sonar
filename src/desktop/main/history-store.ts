@@ -35,13 +35,26 @@ function mapEntry(row: Record<string, unknown>): HistoryEntry {
   }
 }
 
-export function saveHistoryEntry(text: string, modelId: string): HistoryEntry {
+export function saveHistoryEntry(
+  text: string,
+  modelId: string,
+  historyLimit: number
+): HistoryEntry | null {
+  if (historyLimit === 0) return null
   const createdAt = Date.now()
-  const result = getDatabase()
+  const db = getDatabase()
+  const result = db
     .prepare(
       "INSERT INTO transcription_history (created_at, text, model_id) VALUES (?, ?, ?)"
     )
     .run(createdAt, text, modelId)
+
+  db.prepare(
+    `DELETE FROM transcription_history
+     WHERE id NOT IN (
+       SELECT id FROM transcription_history ORDER BY id DESC LIMIT ?
+     )`
+  ).run(historyLimit)
 
   return {
     id: Number(result.lastInsertRowid),
@@ -92,6 +105,21 @@ export function deleteHistoryEntry(id: number): boolean {
 
 export function clearHistory(): void {
   getDatabase().exec("DELETE FROM transcription_history")
+}
+
+export function pruneHistory(limit: number): void {
+  if (limit === 0) {
+    clearHistory()
+    return
+  }
+  getDatabase()
+    .prepare(
+      `DELETE FROM transcription_history
+       WHERE id NOT IN (
+         SELECT id FROM transcription_history ORDER BY id DESC LIMIT ?
+       )`
+    )
+    .run(limit)
 }
 
 export function closeHistoryStore(): void {

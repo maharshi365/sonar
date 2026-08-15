@@ -12,8 +12,9 @@ use napi::threadsafe_function::{ErrorStrategy, ThreadsafeFunction, ThreadsafeFun
 use napi_derive::napi;
 use num_traits::ToPrimitive;
 
-use sonar_dictation::{Pipeline, SessionCallbacks};
+use sonar_dictation::{Pipeline, SessionCallbacks, SessionConfig};
 use sonar_models::{DownloadProgress, Manager, ModelStatus};
+use sonar_transcription::{resolve_compute_device, Accelerator, InferenceConfig};
 
 /// On-disk status of a catalog model, mirrored to TypeScript.
 #[napi(object)]
@@ -214,6 +215,111 @@ pub struct JsStreamText {
     pub tentative: String,
 }
 
+#[napi(object)]
+pub struct JsAudioInputDevice {
+    pub id: String,
+    pub name: String,
+    pub is_default: bool,
+}
+
+/// Enumerate currently available microphone inputs.
+///
+/// # Errors
+/// Returns an error if the platform audio host cannot enumerate inputs.
+#[napi]
+pub fn list_input_devices() -> Result<Vec<JsAudioInputDevice>> {
+    sonar_audio::list_input_devices()
+        .map(|devices| {
+            devices
+                .into_iter()
+                .map(|device| JsAudioInputDevice {
+                    id: device.index,
+                    name: device.name,
+                    is_default: device.is_default,
+                })
+                .collect()
+        })
+        .map_err(|error| Error::from_reason(error.to_string()))
+}
+
+/// A registered inference device. `id` is persisted; `index` is the current
+/// runtime registry position used internally by transcribe-cpp.
+#[napi(object)]
+pub struct JsComputeDevice {
+    pub id: String,
+    pub index: u32,
+    pub name: String,
+    pub kind: String,
+    pub memory: f64,
+}
+
+#[napi]
+#[must_use]
+pub fn list_compute_devices() -> Vec<JsComputeDevice> {
+    sonar_transcription::list_compute_devices()
+        .into_iter()
+        .filter_map(|device| {
+            Some(JsComputeDevice {
+                id: device.id,
+                index: device.index.to_u32()?,
+                name: device.name,
+                kind: device.kind,
+                memory: device.memory.to_f64().unwrap_or(f64::MAX),
+            })
+        })
+        .collect()
+}
+
+/// Per-recording settings. An empty `gpuDeviceId` enables automatic selection.
+#[napi(object)]
+pub struct JsSessionConfig {
+    pub input_device_id: Option<String>,
+    pub custom_words: Vec<String>,
+    pub filler_word_removal: bool,
+    pub custom_filler_words: Vec<String>,
+    pub word_correction_threshold: f64,
+    pub accelerator: String,
+    pub gpu_device_id: String,
+}
+
+impl TryFrom<JsSessionConfig> for SessionConfig {
+    type Error = Error;
+
+    fn try_from(config: JsSessionConfig) -> Result<Self> {
+        if !config.word_correction_threshold.is_finite()
+            || !(0.0..=1.0).contains(&config.word_correction_threshold)
+        {
+            return Err(Error::from_reason(
+                "wordCorrectionThreshold must be a finite number between 0 and 1",
+            ));
+        }
+        let accelerator = Accelerator::parse(&config.accelerator).map_err(Error::from_reason)?;
+        let gpu_device =
+            resolve_compute_device(config.gpu_device_id.trim()).map_err(Error::from_reason)?;
+        let clean = |words: Vec<String>| {
+            words
+                .into_iter()
+                .map(|word| word.trim().to_owned())
+                .filter(|word| !word.is_empty())
+                .collect()
+        };
+        Ok(Self {
+            input_device_id: config
+                .input_device_id
+                .map(|id| id.trim().to_owned())
+                .filter(|id| !id.is_empty()),
+            custom_words: clean(config.custom_words),
+            filler_word_removal: config.filler_word_removal,
+            custom_filler_words: clean(config.custom_filler_words),
+            word_correction_threshold: config.word_correction_threshold,
+            inference: InferenceConfig {
+                accelerator,
+                gpu_device,
+            },
+        })
+    }
+}
+
 /// Preload a model into memory without recording. `filename` is the model file
 /// within the models directory (e.g. `ggml-base.bin`).
 ///
@@ -275,10 +381,12 @@ pub fn current_model() -> Result<Option<String>> {
 pub fn start_transcription(
     model_id: String,
     filename: String,
+    config: JsSessionConfig,
     #[napi(ts_arg_type = "(text: JsStreamText) => void")] on_text: JsFunction,
     #[napi(ts_arg_type = "(levels: number[]) => void")] on_level: JsFunction,
 ) -> Result<()> {
     let pl = pipeline()?;
+    let config = SessionConfig::try_from(config)?;
 
     let text_tsfn: ThreadsafeFunction<JsStreamText, ErrorStrategy::Fatal> =
         on_text.create_threadsafe_function(0, |ctx| Ok(vec![ctx.value]))?;
@@ -303,7 +411,7 @@ pub fn start_transcription(
 
     let model_id = model_id.into_boxed_str();
     let filename = filename.into_boxed_str();
-    pl.start(&model_id, &filename, &callbacks)
+    pl.start(&model_id, &filename, &config, &callbacks)
         .map_err(Error::from_reason)
 }
 
@@ -348,4 +456,15 @@ pub fn cancel_transcription() -> Result<()> {
 #[napi]
 pub fn insert_text(text: String) -> Result<()> {
     sonar_input::insert_text(&text).map_err(Error::from_reason)
+}
+
+/// Send Enter, Ctrl+Enter, or Cmd+Enter to the focused application.
+///
+/// # Errors
+///
+/// Returns an error if the key name is unsupported or injection fails.
+#[allow(clippy::needless_pass_by_value)]
+#[napi]
+pub fn submit_key(key: String) -> Result<()> {
+    sonar_input::submit(&key).map_err(Error::from_reason)
 }

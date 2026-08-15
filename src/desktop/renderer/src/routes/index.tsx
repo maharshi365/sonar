@@ -3,6 +3,8 @@ import { useEffect, useState } from "react"
 import { Loader2, Mic, ShieldCheck, Square, Waves } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
+import { ShortcutKeys } from "@/components/settings/shortcut-settings"
+import { useSettings } from "@/hooks/use-settings"
 import type { TranscriptionState } from "../../../shared/transcription"
 
 export const Route = createFileRoute("/")({
@@ -13,6 +15,7 @@ function HomePage() {
   const [state, setState] = useState<TranscriptionState>("idle")
   const [error, setError] = useState("")
   const [busy, setBusy] = useState(false)
+  const settings = useSettings().query
 
   useEffect(() => {
     const offState = window.sonar.transcription.onState((nextState) => {
@@ -90,12 +93,8 @@ function HomePage() {
               ? "Transcribing…"
               : "Press to start speaking"}
         </h2>
-        <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
-          <kbd className="rounded border border-border bg-secondary px-2 py-1 font-mono text-foreground">Ctrl</kbd>
-          <span>+</span>
-          <kbd className="rounded border border-border bg-secondary px-2 py-1 font-mono text-foreground">Shift</kbd>
-          <span>+</span>
-          <kbd className="rounded border border-border bg-secondary px-2 py-1 font-mono text-foreground">Space</kbd>
+        <div className="mt-3 text-xs text-muted-foreground">
+          <ShortcutKeys value={settings.data?.shortcuts.transcribe ?? "CommandOrControl+Shift+Space"} />
         </div>
 
         {error && (

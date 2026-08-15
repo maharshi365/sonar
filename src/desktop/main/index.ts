@@ -80,9 +80,10 @@ if (!app.requestSingleInstanceLock()) {
     else void app.whenReady().then(showWindow)
   })
 
-  void app.whenReady().then(() => {
+  void app.whenReady().then(async () => {
     registerIpcHandlers()
-    registerShortcuts()
+    await refreshSettingsCache()
+    registerShortcuts(undefined, true)
     Menu.setApplicationMenu(null)
 
     const launchHidden = wasStartedInBackground()
@@ -100,9 +101,6 @@ if (!app.requestSingleInstanceLock()) {
 
     // Pre-create the (hidden) dock overlay so it appears instantly on first use.
     ensureOverlay()
-    // Warm the settings cache so the first recording sees the selected model.
-    void refreshSettingsCache()
-
     app.on("activate", showWindow)
   })
 }

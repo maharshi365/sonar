@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 
-import type { Settings } from "../../../../shared/settings"
+import type { Settings, SettingsPatch } from "../../../../shared/settings"
 import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
+import { SettingsGroup, SettingsRow } from "./settings-field"
 
 const settingsQueryKey = ["settings"] as const
 
@@ -14,15 +15,7 @@ export function AuthSettings() {
   })
 
   if (settingsQuery.isPending) {
-    return (
-      <div className="max-w-xl space-y-6">
-        <div className="space-y-2">
-          <Skeleton className="h-4 w-40" />
-          <Skeleton className="h-8 w-full" />
-          <Skeleton className="h-3 w-64" />
-        </div>
-      </div>
-    )
+    return <Skeleton className="h-28 w-full" />
   }
 
   if (settingsQuery.isError) {
@@ -36,7 +29,7 @@ function AuthSettingsForm({ settings }: { settings: Settings }) {
   const queryClient = useQueryClient()
 
   const mutation = useMutation({
-    mutationFn: (patch: Partial<Settings>) => window.sonar.settings.set(patch),
+    mutationFn: (patch: SettingsPatch) => window.sonar.settings.set(patch),
     onSuccess: (next) => {
       queryClient.setQueryData(settingsQueryKey, next)
     },
@@ -58,29 +51,29 @@ function AuthSettingsForm({ settings }: { settings: Settings }) {
   }, [huggingFaceToken, settings.auth.huggingFaceToken, mutation.mutate])
 
   return (
-    <div className="max-w-xl space-y-2">
-      <label htmlFor="huggingFaceToken" className="text-sm font-medium">
-        Hugging Face access token
-      </label>
-      <Input
-        id="huggingFaceToken"
-        name="huggingFaceToken"
-        type="password"
-        autoComplete="off"
-        value={huggingFaceToken}
-        placeholder="hf_…"
-        onChange={(event) => setHuggingFaceToken(event.target.value)}
-      />
-      <p className="text-xs text-muted-foreground">
-        Optional. All models are public, but a token lifts anonymous rate limits
-        and can speed up downloads. It is stored locally and only ever sent to
-        huggingface.co.
-      </p>
+    <div className="space-y-3">
+      <SettingsGroup title="Model downloads">
+        <SettingsRow
+          label="Hugging Face access token"
+          description="Optional. Lifts anonymous download rate limits. Stored locally and only sent to huggingface.co."
+        >
+          <Input
+            id="huggingFaceToken"
+            name="huggingFaceToken"
+            className="w-72"
+            type="password"
+            autoComplete="off"
+            value={huggingFaceToken}
+            placeholder="hf_..."
+            onChange={(event) => setHuggingFaceToken(event.target.value)}
+          />
+        </SettingsRow>
+      </SettingsGroup>
       <div className="min-h-4 text-xs">
         {mutation.isPending ? (
-          <span className="text-muted-foreground">Saving…</span>
+          <span className="text-muted-foreground">Saving...</span>
         ) : mutation.isError ? (
-          <span className="text-destructive">Couldn’t save</span>
+          <span className="text-destructive">Couldn't save</span>
         ) : mutation.isSuccess ? (
           <span className="text-muted-foreground">Saved</span>
         ) : null}

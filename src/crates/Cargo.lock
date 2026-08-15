@@ -1832,6 +1832,7 @@ dependencies = [
  "napi-build",
  "napi-derive",
  "num-traits",
+ "sonar-audio",
  "sonar-dictation",
  "sonar-input",
  "sonar-models",
@@ -1844,6 +1845,7 @@ version = "0.1.0"
 dependencies = [
  "sonar-audio",
  "sonar-transcription",
+ "strsim",
 ]
 
 [[package]]
@@ -1886,6 +1888,12 @@ name = "strength_reduce"
 version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fe895eb47f22e2ddd4dabc02bce419d2e643c8e3b585c78158b349195bc24d82"
+
+[[package]]
+name = "strsim"
+version = "0.11.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f"
 
 [[package]]
 name = "subtle"

@@ -1,70 +1,79 @@
 import { z } from "zod"
 
-/**
- * Shared settings schema for Sonar.
- *
- * This module is imported by the main process (to load/save/validate the
- * settings.json file) and by the renderer (for typing the settings object it
- * receives over IPC). It must not import anything Electron- or Node-specific
- * so it stays safe to bundle into the renderer.
- *
- * Conventions:
- * - Every setting MUST provide a default via `.default(...)`. This guarantees
- *   `settingsSchema.parse({})` always yields a complete, valid object and lets
- *   us tolerate missing/partial settings.json files.
- * - Group related settings into logical sub-objects (general, models, ...).
- */
-
-/** General application preferences. */
 const generalSettingsSchema = z.object({
-  /**
-   * Identifier of the default text-to-speech model to use.
-   *
-   * DEFAULT: empty string — no model is selected until the user installs one.
-   * Once a model manager exists this should be validated against the set of
-   * installed model IDs rather than being a free-form string.
-   */
   ttsModel: z.string().default(""),
+  modelUnloadTimeout: z
+    .enum(["never", "immediately", "2m", "5m", "10m", "15m", "1h"])
+    .default("5m"),
+  historyLimit: z.number().int().min(0).max(10_000).default(100),
 })
 
-/** Authentication / credentials. */
+const shortcutSettingsSchema = z.object({
+  transcribe: z.string().min(1).default("CommandOrControl+Shift+Space"),
+  cancel: z.string().min(1).default("CommandOrControl+Shift+Backspace"),
+})
+
+const audioSettingsSchema = z.object({
+  inputDeviceId: z.string().default(""),
+})
+
+const outputSettingsSchema = z.object({
+  method: z.enum(["paste", "clipboard", "none"]).default("paste"),
+  appendTrailingSpace: z.boolean().default(false),
+  autoSubmit: z.boolean().default(false),
+  autoSubmitKey: z.enum(["enter", "ctrl_enter", "cmd_enter"]).default("enter"),
+})
+
+const transcriptionSettingsSchema = z.object({
+  customWords: z.array(z.string()).default([]),
+  fillerWordRemoval: z.boolean().default(true),
+  customFillerWords: z.array(z.string()).default([]),
+  extraRecordingBufferMs: z.number().int().min(0).max(5_000).default(0),
+  wordCorrectionThreshold: z.number().min(0).max(1).default(0.18),
+})
+
+const inferenceSettingsSchema = z.object({
+  accelerator: z.enum(["auto", "cpu", "gpu"]).default("auto"),
+  gpuDeviceId: z.string().default(""),
+})
+
 const authSettingsSchema = z.object({
-  /**
-   * Optional Hugging Face access token.
-   *
-   * When set, it is passed to the Rust downloader as a Bearer token to
-   * authenticate model downloads. This is entirely optional — all catalog
-   * models are public — but a token lifts anonymous rate limits and can speed
-   * up downloads. Stored locally in settings.json and never sent anywhere
-   * except huggingface.co.
-   */
   huggingFaceToken: z.string().default(""),
 })
 
 /** Root settings object persisted to settings.json. */
 export const settingsSchema = z.object({
-  // `.prefault({})` lets the whole section be omitted from settings.json while
-  // still applying each field's individual default.
+  schemaVersion: z.number().int().default(1),
   general: generalSettingsSchema.prefault({}),
+  shortcuts: shortcutSettingsSchema.prefault({}),
+  audio: audioSettingsSchema.prefault({}),
+  output: outputSettingsSchema.prefault({}),
+  transcription: transcriptionSettingsSchema.prefault({}),
+  inference: inferenceSettingsSchema.prefault({}),
   auth: authSettingsSchema.prefault({}),
 })
 
 export type Settings = z.infer<typeof settingsSchema>
 export type GeneralSettings = Settings["general"]
+export type ShortcutSettings = Settings["shortcuts"]
+export type AudioSettings = Settings["audio"]
+export type OutputSettings = Settings["output"]
+export type TranscriptionSettings = Settings["transcription"]
+export type InferenceSettings = Settings["inference"]
 export type AuthSettings = Settings["auth"]
+export type SettingsPatch = {
+  schemaVersion?: number
+  general?: Partial<GeneralSettings>
+  shortcuts?: Partial<ShortcutSettings>
+  audio?: Partial<AudioSettings>
+  output?: Partial<OutputSettings>
+  transcription?: Partial<TranscriptionSettings>
+  inference?: Partial<InferenceSettings>
+  auth?: Partial<AuthSettings>
+}
 
-/**
- * The complete default settings object.
- *
- * Derived from the schema so defaults live in exactly one place (the schema).
- */
 export const defaultSettings: Settings = settingsSchema.parse({})
 
-/**
- * Parse a (possibly partial) settings object into a valid Settings object,
- * filling in defaults for anything missing. Throws if a present value has the
- * wrong type.
- */
 export function parseSettings(input: Record<string, unknown> = {}): Settings {
   return settingsSchema.parse(input)
 }

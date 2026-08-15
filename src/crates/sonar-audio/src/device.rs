@@ -1,6 +1,6 @@
-//! Input/output device enumeration (cpal). Not yet surfaced to JS; kept for a
-//! future device-picker.
+//! Input/output device enumeration and selection (cpal).
 use cpal::traits::{DeviceTrait, HostTrait};
+use std::collections::HashMap;
 
 pub struct CpalDeviceInfo {
     pub index: String,
@@ -19,14 +19,22 @@ pub fn list_input_devices() -> Result<Vec<CpalDeviceInfo>, Box<dyn std::error::E
     let default_name = host.default_input_device().and_then(|d| d.name().ok());
 
     let mut out = Vec::<CpalDeviceInfo>::new();
+    let mut name_counts = HashMap::<String, usize>::new();
 
-    for (index, device) in host.input_devices()?.enumerate() {
+    for device in host.input_devices()? {
         let name = device.name().unwrap_or_else(|_| "Unknown".into());
+        let count = name_counts.entry(name.clone()).or_default();
+        *count = count.saturating_add(1);
+        let id = if *count == 1 {
+            name.clone()
+        } else {
+            format!("{name}#{count}")
+        };
 
         let is_default = Some(name.clone()) == default_name;
 
         out.push(CpalDeviceInfo {
-            index: index.to_string(),
+            index: id,
             name,
             is_default,
             device,
@@ -34,6 +42,26 @@ pub fn list_input_devices() -> Result<Vec<CpalDeviceInfo>, Box<dyn std::error::E
     }
 
     Ok(out)
+}
+
+/// Resolve a persisted device name to the current input device.
+///
+/// # Errors
+///
+/// Returns an error when input enumeration fails or `id` is not currently
+/// available.
+pub fn input_device_by_id(id: &str) -> Result<cpal::Device, Box<dyn std::error::Error>> {
+    let devices = list_input_devices()?;
+    devices
+        .into_iter()
+        .find(|info| info.index == id)
+        .map(|info| info.device)
+        .ok_or_else(|| {
+            format!(
+                "input device id '{id}' is unavailable; enumerate devices again and select a valid id"
+            )
+            .into()
+        })
 }
 
 /// Lists the audio output devices visible to cpal.

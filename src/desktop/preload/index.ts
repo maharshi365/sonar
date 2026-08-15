@@ -1,9 +1,10 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron"
 
 import { IpcChannels } from "../shared/ipc"
+import type { AudioInputDevice, ComputeDevice } from "../shared/devices"
 import type { HistoryPage } from "../shared/history"
 import type { ModelDownloadProgress, ModelStatus } from "../shared/models"
-import type { Settings } from "../shared/settings"
+import type { Settings, SettingsPatch } from "../shared/settings"
 import type { StreamText, TranscriptionState } from "../shared/transcription"
 
 contextBridge.exposeInMainWorld("sonar", {
@@ -15,8 +16,14 @@ contextBridge.exposeInMainWorld("sonar", {
      * Persist a (possibly partial) settings patch. Returns the resulting
      * validated settings object.
      */
-    set: (patch: Partial<Settings>): Promise<Settings> =>
+    set: (patch: SettingsPatch): Promise<Settings> =>
       ipcRenderer.invoke(IpcChannels.settingsSet, patch),
+  },
+  devices: {
+    inputs: (): Promise<AudioInputDevice[]> =>
+      ipcRenderer.invoke(IpcChannels.audioInputDevices),
+    compute: (): Promise<ComputeDevice[]> =>
+      ipcRenderer.invoke(IpcChannels.inferenceDevices),
   },
   models: {
     /** List all catalog models with their on-disk status. */

@@ -11,11 +11,24 @@
 //!
 //! One pipeline instance lives for the whole process (see the napi layer).
 
+mod text;
+
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
-use sonar_audio::AudioRecorder;
-use sonar_transcription::{StreamText, TranscriptionEngine};
+use sonar_audio::{input_device_by_id, AudioRecorder};
+use sonar_transcription::{InferenceConfig, StreamText, TranscriptionEngine};
+
+/// Settings fixed for the lifetime of one recording session.
+#[derive(Clone, Default)]
+pub struct SessionConfig {
+    pub input_device_id: Option<String>,
+    pub custom_words: Vec<String>,
+    pub filler_word_removal: bool,
+    pub custom_filler_words: Vec<String>,
+    pub word_correction_threshold: f64,
+    pub inference: InferenceConfig,
+}
 
 /// Callbacks the host (napi layer) supplies for a recording session.
 #[derive(Clone)]
@@ -33,6 +46,7 @@ pub struct Pipeline {
     recorder: Mutex<Option<AudioRecorder>>,
     recording: Mutex<bool>,
     models_dir: Mutex<Option<PathBuf>>,
+    session_config: Mutex<Option<SessionConfig>>,
 }
 
 impl Pipeline {
@@ -44,6 +58,7 @@ impl Pipeline {
             recorder: Mutex::new(None),
             recording: Mutex::new(false),
             models_dir: Mutex::new(None),
+            session_config: Mutex::new(None),
         }
     }
 
@@ -72,7 +87,8 @@ impl Pipeline {
     /// missing, or the transcription engine cannot load the model.
     pub fn load_model(&self, model_id: &str, filename: &str) -> Result<(), String> {
         let path = self.model_path(filename)?;
-        self.engine.load_model(model_id, &path)
+        self.engine
+            .load_model(model_id, &path, InferenceConfig::default())
     }
 
     pub fn unload_model(&self) {
@@ -104,6 +120,7 @@ impl Pipeline {
         &self,
         model_id: &str,
         filename: &str,
+        config: &SessionConfig,
         callbacks: &SessionCallbacks,
     ) -> Result<(), String> {
         {
@@ -115,7 +132,7 @@ impl Pipeline {
         }
 
         // On any early error, clear the recording flag.
-        let result = self.start_inner(model_id, filename, callbacks);
+        let result = self.start_inner(model_id, filename, config, callbacks);
         if result.is_err() {
             *lock(&self.recording) = false;
         }
@@ -126,15 +143,11 @@ impl Pipeline {
         &self,
         model_id: &str,
         filename: &str,
+        config: &SessionConfig,
         callbacks: &SessionCallbacks,
     ) -> Result<(), String> {
         let path = self.model_path(filename)?;
-        self.engine.load_model(model_id, &path)?;
-
-        // Begin the streaming worker before opening the mic so early frames
-        // aren't dropped. Frames sent before the stream begins queue harmlessly.
-        let on_text = callbacks.on_text.clone();
-        TranscriptionEngine::start_stream(&self.engine, on_text);
+        self.engine.load_model(model_id, &path, config.inference)?;
 
         let router = self.engine.router();
         let on_level = callbacks.on_level.clone();
@@ -144,9 +157,21 @@ impl Pipeline {
             .with_level_callback(move |buckets| on_level(buckets))
             .with_audio_callback(move |frame| router.feed(frame));
 
+        let device = config
+            .input_device_id
+            .as_deref()
+            .map(input_device_by_id)
+            .transpose()
+            .map_err(|error| format!("failed to select microphone: {error}"))?;
         recorder
-            .open(None)
+            .open(device)
             .map_err(|e| format!("failed to open microphone: {e}"))?;
+
+        // Opening builds the cpal stream but capture does not begin until
+        // `start`, so the transcription worker can safely start here without
+        // leaking a worker when device selection/opening fails.
+        let on_text = callbacks.on_text.clone();
+        TranscriptionEngine::start_stream(&self.engine, on_text);
         let ready = recorder
             .start()
             .map_err(|e| format!("failed to start recording: {e}"))?;
@@ -154,6 +179,7 @@ impl Pipeline {
         let _ = ready.recv();
 
         *lock(&self.recorder) = Some(recorder);
+        *lock(&self.session_config) = Some(config.clone());
         Ok(())
     }
 
@@ -188,16 +214,32 @@ impl Pipeline {
         };
 
         // Prefer the streamed result; fall back to batch when no stream ran.
-        self.engine.finalize_stream()?.map_or_else(
-            || {
-                if samples.is_empty() {
-                    Ok(String::new())
-                } else {
-                    self.engine.transcribe(&samples)
-                }
-            },
-            Ok,
-        )
+        let config = lock(&self.session_config).take().unwrap_or_default();
+        let streamed = self.engine.finalize_stream()?;
+        let should_prompt_batch = !config.custom_words.is_empty()
+            && self.engine.supports_initial_prompt()
+            && !samples.is_empty();
+        let raw = if should_prompt_batch {
+            self.engine.transcribe(&samples, &config.custom_words)?
+        } else {
+            streamed.map_or_else(
+                || {
+                    if samples.is_empty() {
+                        Ok(String::new())
+                    } else {
+                        self.engine.transcribe(&samples, &config.custom_words)
+                    }
+                },
+                Ok,
+            )?
+        };
+        Ok(text::process(
+            &raw,
+            &config.custom_words,
+            config.word_correction_threshold,
+            config.filler_word_removal,
+            &config.custom_filler_words,
+        ))
     }
 
     /// Cancel an in-flight recording, discarding any transcript.
@@ -209,6 +251,7 @@ impl Pipeline {
             let _ = rec.close();
         }
         self.engine.cancel_stream();
+        *lock(&self.session_config) = None;
     }
 }
 

@@ -1,4 +1,4 @@
-import { BrowserWindow, systemPreferences } from "electron"
+import { BrowserWindow, clipboard, systemPreferences } from "electron"
 
 // The native Rust addon. Only the main process may load it.
 import * as core from "@sonar/core"
@@ -22,6 +22,9 @@ import { getCachedSettings, loadSettings } from "./settings-store"
 let state: TranscriptionState = "idle"
 let activeModelId: string | null = null
 let insertOnComplete = false
+let unloadTimer: NodeJS.Timeout | null = null
+let cancelBufferWait: (() => void) | null = null
+let stopCancelled = false
 
 /** Broadcast to every renderer window (main + overlay). */
 function broadcast(channel: string, ...args: unknown[]): void {
@@ -66,6 +69,10 @@ export async function refreshSettingsCache(): Promise<void> {
 /** Start a recording + live transcription session. */
 export function startRecording(shouldInsert = false): void {
   if (state !== "idle") return
+  if (unloadTimer) {
+    clearTimeout(unloadTimer)
+    unloadTimer = null
+  }
 
   let model: { id: string; filename: string }
   try {
@@ -74,11 +81,22 @@ export function startRecording(shouldInsert = false): void {
     broadcast(IpcChannels.transcriptionError, (error as Error).message)
     return
   }
+  const settings = getCachedSettings()
 
   try {
     core.startTranscription(
       model.id,
       model.filename,
+      {
+        inputDeviceId: settings.audio.inputDeviceId || undefined,
+        customWords: settings.transcription.customWords,
+        fillerWordRemoval: settings.transcription.fillerWordRemoval,
+        customFillerWords: settings.transcription.customFillerWords,
+        wordCorrectionThreshold:
+          settings.transcription.wordCorrectionThreshold,
+        accelerator: settings.inference.accelerator,
+        gpuDeviceId: settings.inference.gpuDeviceId,
+      },
       (text: StreamText) => {
         sendToOverlay(IpcChannels.transcriptionText, text)
         broadcast(IpcChannels.transcriptionText, text)
@@ -103,19 +121,31 @@ export async function stopRecording(): Promise<string> {
   if (state !== "recording") return ""
   setState("transcribing")
   const shouldInsert = insertOnComplete
+  const settings = getCachedSettings()
+  stopCancelled = false
 
   try {
+    if (settings.transcription.extraRecordingBufferMs > 0) {
+      await waitForRecordingBuffer(settings.transcription.extraRecordingBufferMs)
+      if (stopCancelled) return ""
+    }
     const text = await core.stopTranscription()
+    if (stopCancelled) return ""
     if (text.trim()) {
       try {
-        saveHistoryEntry(text, activeModelId ?? "unknown")
-        broadcast(IpcChannels.historyChanged)
+        const saved = saveHistoryEntry(
+          text,
+          activeModelId ?? "unknown",
+          settings.general.historyLimit
+        )
+        if (saved) broadcast(IpcChannels.historyChanged)
       } catch (error) {
         console.error("Failed to save transcription history:", error)
       }
-      if (shouldInsert) {
+      if (shouldInsert || settings.output.method === "clipboard") {
         try {
           if (
+            settings.output.method === "paste" &&
             process.platform === "darwin" &&
             !systemPreferences.isTrustedAccessibilityClient(true)
           ) {
@@ -123,7 +153,18 @@ export async function stopRecording(): Promise<string> {
               "Accessibility permission is required. Enable Sonar in System Settings > Privacy & Security > Accessibility."
             )
           }
-          core.insertText(text)
+          const outputText = settings.output.appendTrailingSpace
+            ? `${text} `
+            : text
+          if (settings.output.method === "paste") {
+            core.insertText(outputText)
+            if (settings.output.autoSubmit) {
+              await sleep(100)
+              core.submitKey(settings.output.autoSubmitKey)
+            }
+          } else if (settings.output.method === "clipboard") {
+            clipboard.writeText(outputText)
+          }
         } catch (error) {
           const message = `Transcription completed, but text insertion failed: ${(error as Error).message}`
           console.error(message)
@@ -141,12 +182,23 @@ export async function stopRecording(): Promise<string> {
     insertOnComplete = false
     setState("idle")
     hideOverlay()
+    scheduleModelUnload(getCachedSettings().general.modelUnloadTimeout)
   }
 }
 
 /** Cancel an in-flight recording, discarding the transcript. */
 export function cancelRecording(): void {
-  if (state !== "recording") return
+  if (state !== "recording" && state !== "transcribing") return
+  if (state === "transcribing") {
+    stopCancelled = true
+    cancelBufferWait?.()
+    try {
+      core.cancelTranscription()
+    } catch {
+      // best-effort
+    }
+    return
+  }
   try {
     core.cancelTranscription()
   } catch {
@@ -156,6 +208,52 @@ export function cancelRecording(): void {
   activeModelId = null
   insertOnComplete = false
   hideOverlay()
+  scheduleModelUnload(getCachedSettings().general.modelUnloadTimeout)
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+function waitForRecordingBuffer(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      cancelBufferWait = null
+      resolve()
+    }, ms)
+    cancelBufferWait = () => {
+      clearTimeout(timer)
+      cancelBufferWait = null
+      resolve()
+    }
+  })
+}
+
+export function scheduleModelUnload(timeout: string): void {
+  if (unloadTimer) {
+    clearTimeout(unloadTimer)
+    unloadTimer = null
+  }
+  if (state !== "idle") return
+  if (timeout === "never") return
+  const delays: Record<string, number> = {
+    immediately: 0,
+    "2m": 2 * 60_000,
+    "5m": 5 * 60_000,
+    "10m": 10 * 60_000,
+    "15m": 15 * 60_000,
+    "1h": 60 * 60_000,
+  }
+  const delay = delays[timeout]
+  if (delay === undefined) return
+  unloadTimer = setTimeout(() => {
+    unloadTimer = null
+    try {
+      core.unloadModel()
+    } catch (error) {
+      console.error("Failed to unload transcription model", error)
+    }
+  }, delay)
 }
 
 /** Toggle recording; returns the resulting state. */

@@ -1,8 +1,9 @@
 /// <reference types="vite/client" />
 
 import type { ModelDownloadProgress, ModelStatus } from "../../shared/models"
+import type { AudioInputDevice, ComputeDevice } from "../../shared/devices"
 import type { HistoryPage } from "../../shared/history"
-import type { Settings } from "../../shared/settings"
+import type { Settings, SettingsPatch } from "../../shared/settings"
 import type { StreamText, TranscriptionState } from "../../shared/transcription"
 
 declare global {
@@ -11,7 +12,11 @@ declare global {
       platform: NodeJS.Platform
       settings: {
         get: () => Promise<Settings>
-        set: (patch: Partial<Settings>) => Promise<Settings>
+        set: (patch: SettingsPatch) => Promise<Settings>
+      }
+      devices: {
+        inputs: () => Promise<AudioInputDevice[]>
+        compute: () => Promise<ComputeDevice[]>
       }
       models: {
         list: () => Promise<ModelStatus[]>

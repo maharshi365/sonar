@@ -5,6 +5,8 @@
 export const IpcChannels = {
   settingsGet: "settings:get",
   settingsSet: "settings:set",
+  audioInputDevices: "audio:input-devices",
+  inferenceDevices: "inference:devices",
 
   /** List all catalog models with their on-disk status. */
   modelsList: "models:list",

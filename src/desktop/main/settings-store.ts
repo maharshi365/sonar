@@ -27,6 +27,7 @@ function settingsFilePath(): string {
 // In-memory cache so the renderer can read settings without hitting disk each
 // time. Loaded lazily on first access.
 let cache: Settings | null = null
+let saveQueue: Promise<void> = Promise.resolve()
 
 /**
  * Load settings from disk, validating against the schema and filling in
@@ -40,6 +41,19 @@ export async function loadSettings(): Promise<Settings> {
     const raw = await readFile(settingsFilePath(), "utf8")
     const parsed: unknown = JSON.parse(raw)
     cache = parseSettings(asRecord(parsed))
+    if (
+      process.platform === "win32" &&
+      cache.shortcuts.cancel === "CommandOrControl+Shift+Escape"
+    ) {
+      cache = {
+        ...cache,
+        shortcuts: {
+          ...cache.shortcuts,
+          cancel: defaultSettings.shortcuts.cancel,
+        },
+      }
+      await writeFile(settingsFilePath(), JSON.stringify(cache, null, 2), "utf8")
+    }
   } catch (error) {
     const err = error as NodeJS.ErrnoException
     if (err.code !== "ENOENT") {
@@ -72,6 +86,15 @@ export function getCachedSettings(): Settings {
  * Returns the resulting validated settings.
  */
 export async function saveSettings(input: unknown): Promise<Settings> {
+  const queued = saveQueue.then(() => saveSettingsNow(input))
+  saveQueue = queued.then(
+    () => undefined,
+    () => undefined
+  )
+  return queued
+}
+
+async function saveSettingsNow(input: unknown): Promise<Settings> {
   const current = await loadSettings()
 
   // Deep-parse the merged object so partial updates keep existing values and
@@ -84,7 +107,7 @@ export async function saveSettings(input: unknown): Promise<Settings> {
   return next
 }
 
-/** Shallow-merge each known top-level section (general, auth, ...). */
+/** Shallow-merge each known top-level section. */
 function mergeSettings(current: Settings, input: unknown): unknown {
   if (typeof input !== "object" || input === null) return current
 
@@ -92,6 +115,14 @@ function mergeSettings(current: Settings, input: unknown): unknown {
   return {
     ...current,
     general: { ...current.general, ...(asRecord(patch.general)) },
+    shortcuts: { ...current.shortcuts, ...(asRecord(patch.shortcuts)) },
+    audio: { ...current.audio, ...(asRecord(patch.audio)) },
+    output: { ...current.output, ...(asRecord(patch.output)) },
+    transcription: {
+      ...current.transcription,
+      ...(asRecord(patch.transcription)),
+    },
+    inference: { ...current.inference, ...(asRecord(patch.inference)) },
     auth: { ...current.auth, ...(asRecord(patch.auth)) },
   }
 }

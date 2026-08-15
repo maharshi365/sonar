@@ -1,10 +1,12 @@
 import { BrowserWindow, ipcMain } from "electron"
+import * as core from "@sonar/core"
 
 import { IpcChannels } from "../shared/ipc"
 import {
   clearHistory,
   deleteHistoryEntry,
   listHistoryEntries,
+  pruneHistory,
 } from "./history-store"
 import {
   cancelDownload,
@@ -13,9 +15,11 @@ import {
   removeModel,
 } from "./models"
 import { loadSettings, saveSettings } from "./settings-store"
+import { registerShortcuts } from "./shortcuts"
 import {
   cancelRecording,
   refreshSettingsCache,
+  scheduleModelUnload,
   startRecording,
   stopRecording,
   toggleRecording,
@@ -27,12 +31,35 @@ import {
 export function registerIpcHandlers(): void {
   ipcMain.handle(IpcChannels.settingsGet, () => loadSettings())
   ipcMain.handle(IpcChannels.settingsSet, async (_event, patch: unknown) => {
+    const previous = await loadSettings()
     const settings = await saveSettings(patch)
-    // Keep the transcription controller's cached settings in sync so the next
-    // recording uses the freshly selected model.
+    if (
+      settings.shortcuts.transcribe !== previous.shortcuts.transcribe ||
+      settings.shortcuts.cancel !== previous.shortcuts.cancel
+    ) {
+      try {
+        registerShortcuts(settings.shortcuts)
+      } catch (error) {
+        await saveSettings({ shortcuts: previous.shortcuts })
+        throw error
+      }
+    }
     await refreshSettingsCache()
+    if (settings.general.historyLimit !== previous.general.historyLimit) {
+      pruneHistory(settings.general.historyLimit)
+      broadcastHistoryChanged()
+    }
+    if (
+      settings.general.modelUnloadTimeout !==
+      previous.general.modelUnloadTimeout
+    ) {
+      scheduleModelUnload(settings.general.modelUnloadTimeout)
+    }
     return settings
   })
+
+  ipcMain.handle(IpcChannels.audioInputDevices, () => core.listInputDevices())
+  ipcMain.handle(IpcChannels.inferenceDevices, () => core.listComputeDevices())
 
   // Models. Download progress is pushed separately via webContents.send on the
   // `models:progress` channel (see main/models.ts).

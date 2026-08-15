@@ -19,9 +19,121 @@ use std::sync::{mpsc, Arc, Mutex, MutexGuard, PoisonError};
 use std::thread;
 use std::time::Duration;
 
-use transcribe_cpp::{Model, RunOptions, Session, StreamOptions};
+use transcribe_cpp::{
+    Backend, Feature, Model, ModelOptions, RunExtension, RunOptions, Session, StreamOptions,
+    WhisperRunOptions,
+};
 
 const FINALIZE_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// User-facing inference accelerator selection.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Accelerator {
+    Auto,
+    Cpu,
+    Gpu,
+}
+
+impl Accelerator {
+    /// Parse the native settings value.
+    ///
+    /// # Errors
+    /// Returns an error when the value is not `auto`, `cpu`, or `gpu`.
+    pub fn parse(value: &str) -> Result<Self, String> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "auto" => Ok(Self::Auto),
+            "cpu" => Ok(Self::Cpu),
+            "gpu" => Ok(Self::Gpu),
+            _ => Err(format!(
+                "invalid accelerator '{value}'; expected auto, cpu, or gpu"
+            )),
+        }
+    }
+
+    const fn backend(self) -> Backend {
+        match self {
+            Self::Auto => Backend::Auto,
+            Self::Cpu => Backend::Cpu,
+            Self::Gpu => gpu_backend(),
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+const fn gpu_backend() -> Backend {
+    Backend::Metal
+}
+
+#[cfg(not(target_os = "macos"))]
+const fn gpu_backend() -> Backend {
+    Backend::Vulkan
+}
+
+/// Model-load settings that form part of resident model identity.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct InferenceConfig {
+    pub accelerator: Accelerator,
+    /// transcribe-cpp registry index. Zero asks the backend to auto-select.
+    pub gpu_device: i32,
+}
+
+impl Default for InferenceConfig {
+    fn default() -> Self {
+        Self {
+            accelerator: Accelerator::Auto,
+            gpu_device: 0,
+        }
+    }
+}
+
+/// Compute device information suitable for presentation by a host binding.
+pub struct ComputeDevice {
+    pub id: String,
+    pub index: usize,
+    pub name: String,
+    pub kind: String,
+    pub memory: u64,
+}
+
+#[must_use]
+pub fn list_compute_devices() -> Vec<ComputeDevice> {
+    initialize_backend();
+    transcribe_cpp::devices()
+        .into_iter()
+        .filter_map(|device| {
+            let index = device.index?;
+            let id = device
+                .device_id
+                .unwrap_or_else(|| format!("{}:{}", device.kind, device.name));
+            Some(ComputeDevice {
+                id,
+                index,
+                name: if device.description.is_empty() {
+                    device.name
+                } else {
+                    device.description
+                },
+                kind: device.kind,
+                memory: device.memory_total,
+            })
+        })
+        .collect()
+}
+
+/// Resolve a persisted hardware identifier to the current backend registry.
+///
+/// # Errors
+/// Returns an error when the selected device is no longer available.
+pub fn resolve_compute_device(id: &str) -> Result<i32, String> {
+    if id.is_empty() {
+        return Ok(0);
+    }
+    let device = list_compute_devices()
+        .into_iter()
+        .find(|device| device.id == id)
+        .ok_or_else(|| format!("selected compute device '{id}' is unavailable"))?;
+    i32::try_from(device.index).map_err(|_| "compute device index exceeds i32 range".to_owned())
+}
 
 /// Initialize the native inference backend once before loading any model.
 ///
@@ -204,6 +316,7 @@ pub struct TranscriptionEngine {
     /// The loaded session, taken out of the mutex while a stream worker owns it.
     session: Mutex<Option<Session>>,
     current_model: Mutex<Option<String>>,
+    current_inference: Mutex<Option<InferenceConfig>>,
     router: Arc<StreamRouter>,
     /// True while a stream worker exists (so a second one can't start).
     worker_active: AtomicBool,
@@ -216,6 +329,7 @@ impl TranscriptionEngine {
         Self {
             session: Mutex::new(None),
             current_model: Mutex::new(None),
+            current_inference: Mutex::new(None),
             router: Arc::new(StreamRouter::new()),
             worker_active: AtomicBool::new(false),
         }
@@ -246,13 +360,37 @@ impl TranscriptionEngine {
     /// # Errors
     ///
     /// Returns an error if the model or its inference session cannot be loaded.
-    pub fn load_model(&self, model_id: &str, model_path: &Path) -> Result<(), String> {
-        if lock(&self.current_model).as_deref() == Some(model_id) && lock(&self.session).is_some() {
+    pub fn load_model(
+        &self,
+        model_id: &str,
+        model_path: &Path,
+        inference: InferenceConfig,
+    ) -> Result<(), String> {
+        if lock(&self.current_model).as_deref() == Some(model_id)
+            && lock(&self.current_inference).as_ref() == Some(&inference)
+            && lock(&self.session).is_some()
+        {
             return Ok(());
         }
 
-        let model =
-            Model::load(model_path).map_err(|e| format!("failed to load model {model_id}: {e}"))?;
+        if inference.gpu_device < 0 {
+            return Err(
+                "gpu device index must be 0 (auto) or a positive registry index".to_owned(),
+            );
+        }
+        let backend = inference.accelerator.backend();
+        if inference.accelerator == Accelerator::Gpu && !transcribe_cpp::backend_available(backend)
+        {
+            return Err(format!("requested GPU backend {backend:?} is unavailable"));
+        }
+        let model = Model::load_with(
+            model_path,
+            &ModelOptions {
+                backend,
+                gpu_device: inference.gpu_device,
+            },
+        )
+        .map_err(|e| format!("failed to load model {model_id}: {e}"))?;
         let session = model
             .session()
             .map_err(|e| format!("failed to create session for {model_id}: {e}"))?;
@@ -267,12 +405,14 @@ impl TranscriptionEngine {
 
         *lock(&self.session) = Some(session);
         *lock(&self.current_model) = Some(model_id.to_owned());
+        *lock(&self.current_inference) = Some(inference);
         Ok(())
     }
 
     pub fn unload_model(&self) {
         *lock(&self.session) = None;
         *lock(&self.current_model) = None;
+        *lock(&self.current_inference) = None;
     }
 
     /// Whether the loaded model advertises live streaming.
@@ -281,6 +421,14 @@ impl TranscriptionEngine {
         lock(&self.session)
             .as_ref()
             .is_some_and(|session| session.model().capabilities().supports_streaming)
+    }
+
+    /// Whether the loaded model can consume a decode-time initial prompt.
+    #[must_use]
+    pub fn supports_initial_prompt(&self) -> bool {
+        lock(&self.session)
+            .as_ref()
+            .is_some_and(|session| session.model().supports(Feature::InitialPrompt))
     }
 
     /// Begin a streaming session. Spawns a worker that takes the session out of
@@ -438,11 +586,34 @@ impl TranscriptionEngine {
     /// # Errors
     ///
     /// Returns an error if no model is loaded or inference fails.
-    pub fn transcribe(&self, audio: &[f32]) -> Result<String, String> {
-        let result = lock(&self.session)
-            .as_mut()
-            .ok_or_else(|| "no model loaded".to_owned())?
-            .run(audio, &RunOptions::default());
+    pub fn transcribe(&self, audio: &[f32], custom_words: &[String]) -> Result<String, String> {
+        let prompt = custom_words
+            .iter()
+            .map(|word| word.trim())
+            .filter(|word| !word.is_empty())
+            .collect::<Vec<_>>()
+            .join(", ");
+        let result = {
+            let mut session_guard = lock(&self.session);
+            let session = session_guard
+                .as_mut()
+                .ok_or_else(|| "no model loaded".to_owned())?;
+            let options = if !prompt.is_empty() && session.model().supports(Feature::InitialPrompt)
+            {
+                RunOptions {
+                    family: Some(RunExtension::Whisper(WhisperRunOptions {
+                        initial_prompt: Some(prompt),
+                        ..Default::default()
+                    })),
+                    ..Default::default()
+                }
+            } else {
+                RunOptions::default()
+            };
+            let result = session.run(audio, &options);
+            drop(session_guard);
+            result
+        };
         result
             .map(|transcription| transcription.text)
             .map_err(|e| format!("transcription failed: {e}"))
@@ -472,4 +643,17 @@ fn drain_until_finalize(rx: &mpsc::Receiver<StreamCmd>) {
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Accelerator;
+
+    #[test]
+    fn parses_accelerators_case_insensitively() {
+        assert_eq!(Accelerator::parse("AUTO"), Ok(Accelerator::Auto));
+        assert_eq!(Accelerator::parse(" cpu "), Ok(Accelerator::Cpu));
+        assert_eq!(Accelerator::parse("gpu"), Ok(Accelerator::Gpu));
+        assert!(Accelerator::parse("cuda").is_err());
+    }
 }

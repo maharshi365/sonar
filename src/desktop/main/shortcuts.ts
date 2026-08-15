@@ -1,29 +1,58 @@
 import { globalShortcut } from "electron"
 
-import { toggleRecording } from "./transcription"
+import type { ShortcutSettings } from "../shared/settings"
+import { getCachedSettings } from "./settings-store"
+import { cancelRecording, toggleRecording } from "./transcription"
 
-/**
- * Global keyboard shortcut for hands-free dictation.
- *
- * The accelerator matches the hint shown on the home page. Electron's
- * `globalShortcut` fires while any app is focused, so pressing it toggles a
- * recording session and the dock overlay appears/disappears accordingly.
- *
- * NOTE: this is a toggle (press to start, press again to stop), not push-to-
- * talk — Electron's globalShortcut doesn't expose key-up events. A push-to-talk
- * backend (rdev-style) can replace this later without touching the UI.
- */
-const ACCELERATOR = "CommandOrControl+Shift+Space"
+let active: ShortcutSettings | null = null
 
-export function registerShortcuts(): void {
-  const ok = globalShortcut.register(ACCELERATOR, () => {
-    void toggleRecording(true)
-  })
-  if (!ok) {
-    console.error(`Failed to register global shortcut: ${ACCELERATOR}`)
+function register(settings: ShortcutSettings): string[] {
+  const registrations: Array<[string, () => void]> = [
+    [settings.transcribe, () => void toggleRecording(true)],
+    [settings.cancel, cancelRecording],
+  ]
+  const unavailable: string[] = []
+
+  for (const [accelerator, handler] of registrations) {
+    try {
+      if (!globalShortcut.register(accelerator, handler)) {
+        unavailable.push(accelerator)
+      }
+    } catch {
+      unavailable.push(accelerator)
+    }
+  }
+  return unavailable
+}
+
+export function registerShortcuts(
+  settings: ShortcutSettings = getCachedSettings().shortcuts,
+  allowPartial = false
+): void {
+  const previous = active
+  globalShortcut.unregisterAll()
+  const unavailable = register(settings)
+
+  if (unavailable.length > 0 && !allowPartial) {
+    globalShortcut.unregisterAll()
+    if (previous) {
+      const failedToRestore = register(previous)
+      if (failedToRestore.length === 0) {
+        active = previous
+      } else {
+        active = null
+      }
+    }
+    throw new Error(`Shortcut is unavailable: ${unavailable.join(", ")}`)
+  }
+
+  active = settings
+  if (unavailable.length > 0) {
+    console.warn(`Global shortcuts unavailable: ${unavailable.join(", ")}`)
   }
 }
 
 export function unregisterShortcuts(): void {
   globalShortcut.unregisterAll()
+  active = null
 }

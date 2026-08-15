@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Link } from "@tanstack/react-router"
 
 import type { ModelStatus } from "../../../../shared/models"
-import type { Settings } from "../../../../shared/settings"
+import type { Settings, SettingsPatch } from "../../../../shared/settings"
 import {
   Select,
   SelectContent,
@@ -12,6 +12,8 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
+import { NumberInput } from "@/components/ui/input"
+import { SettingsGroup, SettingsRow } from "./settings-field"
 
 const settingsQueryKey = ["settings"] as const
 const modelsQueryKey = ["models"] as const
@@ -67,10 +69,18 @@ function GeneralSettingsForm({
   const downloadedModels = models.filter((model) => model.isDownloaded)
 
   const mutation = useMutation({
-    mutationFn: (patch: Partial<Settings>) => window.sonar.settings.set(patch),
+    mutationFn: (patch: SettingsPatch) => window.sonar.settings.set(patch),
+    onMutate: (patch) => {
+      queryClient.setQueryData<Settings>(settingsQueryKey, (current) =>
+        current && patch.general
+          ? { ...current, general: { ...current.general, ...patch.general } }
+          : current
+      )
+    },
     onSuccess: (next) => {
       queryClient.setQueryData(settingsQueryKey, next)
     },
+    onError: () => void queryClient.invalidateQueries({ queryKey: settingsQueryKey }),
   })
 
   // If the persisted model is no longer downloaded, don't preselect it.
@@ -82,11 +92,22 @@ function GeneralSettingsForm({
 
   const [ttsModel, setTtsModel] = useState(initialModel)
 
+  const saveGeneral = (patch: Partial<typeof settings.general>) =>
+    mutation.mutate({ general: patch })
+  const unloadLabels = {
+    immediately: "Immediately",
+    "2m": "After 2 minutes",
+    "5m": "After 5 minutes",
+    "10m": "After 10 minutes",
+    "15m": "After 15 minutes",
+    "1h": "After 1 hour",
+    never: "Never",
+  }
+
   return (
-    <div className="max-w-xl space-y-2">
-      <label htmlFor="ttsModel" className="text-sm font-medium">
-        Default speech model
-      </label>
+    <div className="space-y-6">
+      <SettingsGroup title="Models and history">
+      <SettingsRow label="Default speech model" description="The downloaded model used for transcription.">
       {downloadedModels.length > 0 ? (
         <div className="flex items-center gap-3">
           <Select
@@ -94,7 +115,7 @@ function GeneralSettingsForm({
             onValueChange={(value) => {
               const nextModel = value as string
               setTtsModel(nextModel)
-              mutation.mutate({ general: { ttsModel: nextModel } })
+              saveGeneral({ ttsModel: nextModel })
             }}
             disabled={mutation.isPending}
           >
@@ -131,10 +152,27 @@ function GeneralSettingsForm({
           to select it here.
         </p>
       )}
-      <p className="text-xs text-muted-foreground">
-        The model used for transcription by default. Only downloaded models can
-        be selected.
-      </p>
+      </SettingsRow>
+      <SettingsRow label="Unload model" description="Release model memory after Sonar has been idle.">
+        <Select value={settings.general.modelUnloadTimeout} onValueChange={(value) => saveGeneral({ modelUnloadTimeout: value as typeof settings.general.modelUnloadTimeout })}>
+          <SelectTrigger className="w-40">
+            <SelectValue>{(value: keyof typeof unloadLabels) => unloadLabels[value]}</SelectValue>
+          </SelectTrigger>
+          <SelectContent align="end" alignItemWithTrigger={false}>
+            <SelectItem value="immediately">Immediately</SelectItem>
+            <SelectItem value="2m">After 2 minutes</SelectItem>
+            <SelectItem value="5m">After 5 minutes</SelectItem>
+            <SelectItem value="10m">After 10 minutes</SelectItem>
+            <SelectItem value="15m">After 15 minutes</SelectItem>
+            <SelectItem value="1h">After 1 hour</SelectItem>
+            <SelectItem value="never">Never</SelectItem>
+          </SelectContent>
+        </Select>
+      </SettingsRow>
+      <SettingsRow label="History limit" description="Maximum saved transcripts. Set to 0 to disable and clear history.">
+        <NumberInput className="w-24" min={0} max={10000} defaultValue={settings.general.historyLimit} onBlur={(event) => saveGeneral({ historyLimit: Number(event.target.value) })} />
+      </SettingsRow>
+      </SettingsGroup>
     </div>
   )
 }

@@ -16,6 +16,7 @@ crate-type = ["cdylib"]
 napi = { version = "2", default-features = false, features = ["napi6", "async", "tokio_rt", "serde-json"] }
 napi-derive = "2"
 num-traits = "0.2"
+sonar-audio = { path = "../sonar-audio" }
 sonar-dictation = { path = "../sonar-dictation" }
 sonar-input = { path = "../sonar-input" }
 sonar-models = { path = "../sonar-models" }

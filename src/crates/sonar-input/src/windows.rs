@@ -116,6 +116,32 @@ pub fn insert_text(text: &str) -> Result<(), String> {
     }
 }
 
+pub fn submit(key: &str) -> Result<(), String> {
+    let mut enigo = Enigo::new(&Settings::default())
+        .map_err(|error| format!("failed to initialize input injection: {error}"))?;
+    let modifier = match key {
+        "enter" => None,
+        "ctrl_enter" => Some(Key::Control),
+        _ => return Err(format!("unsupported submit key '{key}' on Windows")),
+    };
+    if let Some(modifier) = modifier {
+        enigo
+            .key(modifier, Direction::Press)
+            .map_err(|error| format!("failed to press submit modifier: {error}"))?;
+    }
+    let result = enigo
+        .key(Key::Return, Direction::Click)
+        .map_err(|error| format!("failed to press Enter: {error}"));
+    if let Some(modifier) = modifier {
+        let release = enigo
+            .key(modifier, Direction::Release)
+            .map_err(|error| format!("failed to release submit modifier: {error}"));
+        result.and(release)
+    } else {
+        result
+    }
+}
+
 fn send_paste_chord() -> Result<(), String> {
     let mut enigo = Enigo::new(&Settings::default())
         .map_err(|error| format!("failed to initialize input injection: {error}"))?;

@@ -55,6 +55,32 @@ pub fn insert_text(text: &str) -> Result<(), String> {
     paste_result
 }
 
+pub fn submit(key: &str) -> Result<(), String> {
+    let mut enigo = Enigo::new(&Settings::default()).map_err(accessibility_error)?;
+    let modifier = match key {
+        "enter" => None,
+        "ctrl_enter" => Some(Key::Control),
+        "cmd_enter" => Some(Key::Meta),
+        _ => return Err(format!("unsupported submit key '{key}' on macOS")),
+    };
+    if let Some(modifier) = modifier {
+        enigo
+            .key(modifier, Direction::Press)
+            .map_err(accessibility_error)?;
+    }
+    let result = enigo
+        .key(Key::Return, Direction::Click)
+        .map_err(accessibility_error);
+    if let Some(modifier) = modifier {
+        let release = enigo
+            .key(modifier, Direction::Release)
+            .map_err(accessibility_error);
+        result.and(release)
+    } else {
+        result
+    }
+}
+
 fn send_paste_chord() -> Result<(), String> {
     let mut enigo = Enigo::new(&Settings::default()).map_err(|error| {
         format!(
