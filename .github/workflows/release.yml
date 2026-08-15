@@ -109,7 +109,7 @@ jobs:
         shell: bash
         run: |
           mkdir publish
-          find release -type f ! -name 'latest*.yml' -exec cp {} publish/ \;
+          find release -type f -name 'Sonar-*' -exec cp {} publish/ \;
           cp release/sonar-windows-x64/latest.yml publish/
           ruby -ryaml -e '
             paths = Dir["release/sonar-macos-*/latest-mac.yml"]
