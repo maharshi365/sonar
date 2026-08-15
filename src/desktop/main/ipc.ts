@@ -16,6 +16,7 @@ import {
 } from "./models"
 import { loadSettings, saveSettings } from "./settings-store"
 import { registerShortcuts } from "./shortcuts"
+import { checkForUpdates, getUpdateStatus, installUpdate } from "./updates"
 import {
   cancelRecording,
   refreshSettingsCache,
@@ -95,6 +96,10 @@ export function registerIpcHandlers(): void {
     clearHistory()
     broadcastHistoryChanged()
   })
+
+  ipcMain.handle(IpcChannels.updatesGetStatus, () => getUpdateStatus())
+  ipcMain.handle(IpcChannels.updatesCheck, () => checkForUpdates())
+  ipcMain.handle(IpcChannels.updatesInstall, () => installUpdate())
 
   // Live transcription.
   ipcMain.handle(IpcChannels.transcriptionToggle, () => toggleRecording())

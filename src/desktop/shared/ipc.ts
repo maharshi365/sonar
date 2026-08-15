@@ -30,6 +30,13 @@ export const IpcChannels = {
   /** Main -> renderer: persisted history changed. */
   historyChanged: "history:changed",
 
+  // --- Application updates ---
+  updatesGetStatus: "updates:get-status",
+  updatesCheck: "updates:check",
+  updatesInstall: "updates:install",
+  /** Main -> renderer: update check or download state changed. */
+  updatesStatus: "updates:status",
+
   // --- Live transcription ---
   /** Toggle recording on/off (renderer -> main). Resolves to the new state. */
   transcriptionToggle: "transcription:toggle",

@@ -1,9 +1,11 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Link } from "@tanstack/react-router"
 
 import type { ModelStatus } from "../../../../shared/models"
 import type { Settings, SettingsPatch } from "../../../../shared/settings"
+import type { UpdateStatus } from "../../../../shared/updates"
+import { Button } from "@/components/ui/button"
 import {
   Select,
   SelectContent,
@@ -17,6 +19,7 @@ import { SettingsGroup, SettingsRow } from "./settings-field"
 
 const settingsQueryKey = ["settings"] as const
 const modelsQueryKey = ["models"] as const
+const updateQueryKey = ["update-status"] as const
 
 export function GeneralSettings() {
   const settingsQuery = useQuery({
@@ -173,6 +176,100 @@ function GeneralSettingsForm({
         <NumberInput className="w-24" min={0} max={10000} defaultValue={settings.general.historyLimit} onBlur={(event) => saveGeneral({ historyLimit: Number(event.target.value) })} />
       </SettingsRow>
       </SettingsGroup>
+      <UpdateSettings />
     </div>
   )
+}
+
+function UpdateSettings() {
+  const queryClient = useQueryClient()
+  const statusQuery = useQuery({
+    queryKey: updateQueryKey,
+    queryFn: () => window.sonar.updates.getStatus(),
+  })
+  const checkMutation = useMutation({
+    mutationFn: () => window.sonar.updates.check(),
+    onSuccess: (status) => queryClient.setQueryData(updateQueryKey, status),
+  })
+  const installMutation = useMutation({
+    mutationFn: () => window.sonar.updates.install(),
+  })
+
+  useEffect(
+    () =>
+      window.sonar.updates.onStatus((status) => {
+        queryClient.setQueryData(updateQueryKey, status)
+      }),
+    [queryClient]
+  )
+
+  const status = statusQuery.data
+  const description = updateDescription(status)
+  const disabled =
+    !status ||
+    status.phase === "unsupported" ||
+    status.phase === "checking" ||
+    status.phase === "available" ||
+    status.phase === "downloading" ||
+    checkMutation.isPending ||
+    installMutation.isPending
+
+  return (
+    <SettingsGroup title="Updates">
+      <SettingsRow label="Sonar updates" description={description}>
+        <Button
+          variant={status?.phase === "downloaded" ? "default" : "outline"}
+          disabled={disabled}
+          onClick={() => {
+            if (status?.phase === "downloaded") installMutation.mutate()
+            else checkMutation.mutate()
+          }}
+        >
+          {updateButtonLabel(status)}
+        </Button>
+      </SettingsRow>
+    </SettingsGroup>
+  )
+}
+
+function updateDescription(status: UpdateStatus | undefined): string {
+  if (!status) return "Loading update status..."
+  const version = `Version ${status.currentVersion}.`
+
+  switch (status.phase) {
+    case "checking":
+      return `${version} Checking for updates...`
+    case "up-to-date":
+      return `${version} Sonar is up to date.`
+    case "available":
+      return `${version} Downloading Sonar ${status.version}...`
+    case "downloading":
+      return `${version} Downloading Sonar ${status.version} (${status.percent ?? 0}%).`
+    case "downloaded":
+      return `${version} Sonar ${status.version} is ready to install.`
+    case "error":
+      return `${version} ${status.message ?? "The update check failed."}`
+    case "unsupported":
+      return `${version} ${status.message}`
+    default:
+      return `${version} Check GitHub for a newer release.`
+  }
+}
+
+function updateButtonLabel(status: UpdateStatus | undefined): string {
+  if (!status) return "Loading..."
+  switch (status.phase) {
+    case "checking":
+      return "Checking..."
+    case "available":
+      return "Starting download..."
+    case "downloading":
+      return `Downloading ${status.percent ?? 0}%`
+    case "downloaded":
+      return "Install and restart"
+    case "unsupported":
+      return "Installed builds only"
+    default:
+      return "Check for updates"
+  }
 }

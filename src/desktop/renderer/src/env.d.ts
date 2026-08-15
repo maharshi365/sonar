@@ -5,6 +5,7 @@ import type { AudioInputDevice, ComputeDevice } from "../../shared/devices"
 import type { HistoryPage } from "../../shared/history"
 import type { Settings, SettingsPatch } from "../../shared/settings"
 import type { StreamText, TranscriptionState } from "../../shared/transcription"
+import type { UpdateStatus } from "../../shared/updates"
 
 declare global {
   interface Window {
@@ -32,6 +33,12 @@ declare global {
         delete: (id: number) => Promise<boolean>
         clear: () => Promise<void>
         onChanged: (callback: () => void) => () => void
+      }
+      updates: {
+        getStatus: () => Promise<UpdateStatus>
+        check: () => Promise<UpdateStatus>
+        install: () => Promise<void>
+        onStatus: (callback: (status: UpdateStatus) => void) => () => void
       }
       transcription: {
         toggle: () => Promise<boolean>

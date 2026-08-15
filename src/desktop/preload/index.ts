@@ -6,6 +6,7 @@ import type { HistoryPage } from "../shared/history"
 import type { ModelDownloadProgress, ModelStatus } from "../shared/models"
 import type { Settings, SettingsPatch } from "../shared/settings"
 import type { StreamText, TranscriptionState } from "../shared/transcription"
+import type { UpdateStatus } from "../shared/updates"
 
 contextBridge.exposeInMainWorld("sonar", {
   platform: process.platform,
@@ -62,6 +63,19 @@ contextBridge.exposeInMainWorld("sonar", {
       const listener = (): void => callback()
       ipcRenderer.on(IpcChannels.historyChanged, listener)
       return () => ipcRenderer.removeListener(IpcChannels.historyChanged, listener)
+    },
+  },
+  updates: {
+    getStatus: (): Promise<UpdateStatus> =>
+      ipcRenderer.invoke(IpcChannels.updatesGetStatus),
+    check: (): Promise<UpdateStatus> =>
+      ipcRenderer.invoke(IpcChannels.updatesCheck),
+    install: (): Promise<void> => ipcRenderer.invoke(IpcChannels.updatesInstall),
+    onStatus: (callback: (status: UpdateStatus) => void): (() => void) => {
+      const listener = (_event: IpcRendererEvent, status: UpdateStatus): void =>
+        callback(status)
+      ipcRenderer.on(IpcChannels.updatesStatus, listener)
+      return () => ipcRenderer.removeListener(IpcChannels.updatesStatus, listener)
     },
   },
   transcription: {
