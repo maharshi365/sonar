@@ -8,8 +8,8 @@ if (profile !== "debug" && profile !== "release") {
 }
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..")
-const targetDir = join(root, "src", "crates", "target", profile)
 const addonDir = join(root, "src", "crates", "sonar-core")
+const targetDir = join(addonDir, "target", profile)
 
 let source
 let target
