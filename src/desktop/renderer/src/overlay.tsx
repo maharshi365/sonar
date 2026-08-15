@@ -79,7 +79,7 @@ function Overlay() {
 
   const transcribing = state === "transcribing"
   const hasText = Boolean(text.committed || text.tentative)
-  const panelOpen = expanded || hasText
+  const panelOpen = expanded
   const displayText = hasText
     ? text
     : { committed: transcribing ? "Transcribing..." : "Listening...", tentative: "" }
