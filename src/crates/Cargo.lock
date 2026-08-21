@@ -5760,6 +5760,7 @@ dependencies = [
  "sonar-models",
  "sonar-transcription",
  "tokio",
+ "unicode-segmentation",
 ]
 
 [[package]]

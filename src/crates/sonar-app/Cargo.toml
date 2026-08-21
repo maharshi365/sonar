@@ -28,6 +28,7 @@ sonar-input = { path = "../sonar-input" }
 sonar-models = { path = "../sonar-models" }
 sonar-transcription = { path = "../sonar-transcription" }
 tokio = { version = "1", features = ["rt-multi-thread", "time"] }
+unicode-segmentation = "1"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 gpui_platform = { git = "https://github.com/zed-industries/zed", rev = "91bf967e279fba3b326c096aeb66053cb2373547", features = ["wayland", "x11"] }

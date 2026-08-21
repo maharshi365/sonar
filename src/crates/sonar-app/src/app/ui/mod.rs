@@ -2,6 +2,7 @@ mod components;
 pub(in crate::app) mod overlay;
 mod pages;
 mod shell;
+pub(in crate::app) mod text_input;
 
 const BACKGROUND: u32 = 0x090a0c;
 const SIDEBAR: u32 = 0x191a1e;

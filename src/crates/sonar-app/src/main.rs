@@ -1,4 +1,5 @@
 mod app;
+mod assets;
 mod history;
 mod hotkeys;
 mod service;

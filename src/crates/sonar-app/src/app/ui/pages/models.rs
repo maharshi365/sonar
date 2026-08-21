@@ -2,7 +2,7 @@ use gpui::{div, prelude::*, px, rgb, AnyElement, Context, Div, FontWeight};
 use sonar_models::ModelStatus;
 
 use super::super::{
-    components::{action_button, danger_button, header, icon, primary_button},
+    components::{action_button, danger_icon_button, header, icon, primary_icon_button},
     BORDER, CARD, MUTED, PRIMARY,
 };
 use crate::app::SonarApp;
@@ -73,24 +73,24 @@ impl SonarApp {
                 .on_click(cx.listener(move |app, _, _, _| app.service.cancel_download(&model_id)))
         } else if model.is_downloaded {
             let remove_id = model.id.clone();
-            danger_button(format!("remove-{}", model.id), "Remove").on_click(cx.listener(
-                move |app, _, _, _| {
+            danger_icon_button(format!("remove-{}", model.id), "trash", "Remove").on_click(
+                cx.listener(move |app, _, _, _| {
                     app.service.remove(remove_id.clone());
                     if app.settings.general.tts_model == remove_id {
                         app.settings.general.tts_model.clear();
                         app.persist_settings();
                     }
-                },
-            ))
+                }),
+            )
         } else {
             let download_id = model.id.clone();
-            primary_button(format!("download-{}", model.id), "Download").on_click(cx.listener(
-                move |app, _, _, _| {
+            primary_icon_button(format!("download-{}", model.id), "download", "Download").on_click(
+                cx.listener(move |app, _, _, _| {
                     let token = (!app.settings.auth.hugging_face_token.trim().is_empty())
                         .then(|| app.settings.auth.hugging_face_token.clone());
                     app.service.download(download_id.clone(), token);
-                },
-            ))
+                }),
+            )
         };
         let size = if model.size_bytes >= 1_000_000_000 {
             format!("{:.1} GB", model.size_bytes as f64 / 1_000_000_000.0)

@@ -2,7 +2,7 @@ use chrono::{DateTime, Local};
 use gpui::{div, prelude::*, px, rgb, AnyElement, Context, FontWeight};
 
 use super::super::{
-    components::{action_button, danger_button, empty_state, header},
+    components::{action_icon_button, danger_icon_button, empty_state, header},
     BORDER, CARD, MUTED,
 };
 use crate::app::SonarApp;
@@ -55,27 +55,31 @@ impl SonarApp {
                             div()
                                 .flex()
                                 .gap_2()
-                                .child(action_button(format!("copy-{id}"), "Copy").on_click(
-                                    cx.listener(move |app, _, _, _| {
-                                        if let Err(error) =
-                                            arboard::Clipboard::new().and_then(|mut clipboard| {
-                                                clipboard.set_text(copy_text.clone())
-                                            })
-                                        {
-                                            app.error = Some(format!("Failed to copy: {error}"));
-                                        }
-                                    }),
-                                ))
-                                .child(danger_button(format!("delete-{id}"), "Delete").on_click(
-                                    cx.listener(move |app, _, _, cx| {
-                                        if let Err(error) = app.history.delete(id) {
-                                            app.error =
-                                                Some(format!("Failed to delete history: {error}"));
-                                        }
-                                        app.reload_history();
-                                        cx.notify();
-                                    }),
-                                )),
+                                .child(
+                                    action_icon_button(format!("copy-{id}"), "copy", "Copy")
+                                        .on_click(cx.listener(move |app, _, _, _| {
+                                            if let Err(error) = arboard::Clipboard::new().and_then(
+                                                |mut clipboard| {
+                                                    clipboard.set_text(copy_text.clone())
+                                                },
+                                            ) {
+                                                app.error =
+                                                    Some(format!("Failed to copy: {error}"));
+                                            }
+                                        })),
+                                )
+                                .child(
+                                    danger_icon_button(format!("delete-{id}"), "trash", "Delete")
+                                        .on_click(cx.listener(move |app, _, _, cx| {
+                                            if let Err(error) = app.history.delete(id) {
+                                                app.error = Some(format!(
+                                                    "Failed to delete history: {error}"
+                                                ));
+                                            }
+                                            app.reload_history();
+                                            cx.notify();
+                                        })),
+                                ),
                         ),
                 )
                 .child(
@@ -111,15 +115,15 @@ impl SonarApp {
                             )),
                     )
                     .child(
-                        danger_button("clear-history", "Clear history").on_click(cx.listener(
-                            |app, _, _, cx| {
+                        danger_icon_button("clear-history", "trash", "Clear history").on_click(
+                            cx.listener(|app, _, _, cx| {
                                 if let Err(error) = app.history.clear() {
                                     app.error = Some(format!("Failed to clear history: {error}"));
                                 }
                                 app.reload_history();
                                 cx.notify();
-                            },
-                        )),
+                            }),
+                        ),
                     ),
             )
             .child(

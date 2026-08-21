@@ -1,13 +1,18 @@
-use gpui::{div, prelude::*, rgb, AnyElement, Context};
+use gpui::{div, prelude::*, px, rgb, AnyElement, Context, Div, Entity};
 
 use super::super::{
     components::{header, setting_row, settings_group, toggle_button, value_button, value_pill},
+    text_input::TextInput,
     BORDER, MUTED, PRIMARY,
 };
 use crate::{
     app::SonarApp,
     settings::{Accelerator, ModelUnloadTimeout, OutputMethod},
 };
+
+fn input_control(input: &Entity<TextInput>) -> Div {
+    div().w(px(240.0)).flex_none().child(input.clone())
+}
 
 impl SonarApp {
     pub(in crate::app::ui) fn settings_page(&self, cx: &mut Context<Self>) -> AnyElement {
@@ -85,12 +90,8 @@ impl SonarApp {
                 "Hugging Face",
                 vec![setting_row(
                     "Access token",
-                    "The existing local token is used for model downloads.",
-                    value_pill(if self.settings.auth.hugging_face_token.is_empty() {
-                        "Not configured".to_owned()
-                    } else {
-                        "Configured".to_owned()
-                    }),
+                    "Used for gated model downloads. Stored locally, never uploaded.",
+                    input_control(&self.hf_token_input),
                 )],
             )
             .into_any_element(),
@@ -149,28 +150,8 @@ impl SonarApp {
                 ),
                 setting_row(
                     "History limit",
-                    "Maximum saved transcripts. Set to 0 to disable and clear history.",
-                    value_button(
-                        "history-limit",
-                        self.settings.general.history_limit.to_string(),
-                    )
-                    .on_click(cx.listener(|app, _, _, cx| {
-                        app.settings.general.history_limit =
-                            match app.settings.general.history_limit {
-                                0 => 100,
-                                1..=100 => 500,
-                                101..=500 => 1000,
-                                _ => 0,
-                            };
-                        let limit =
-                            usize::try_from(app.settings.general.history_limit).unwrap_or_default();
-                        if let Err(error) = app.history.prune(limit) {
-                            app.error = Some(format!("Failed to prune history: {error}"));
-                        }
-                        app.reload_history();
-                        app.persist_settings();
-                        cx.notify();
-                    })),
+                    "Maximum saved transcripts (0-10000). Set to 0 to disable and clear history.",
+                    input_control(&self.history_limit_input),
                 ),
             ],
         )
@@ -277,11 +258,8 @@ impl SonarApp {
             vec![
                 setting_row(
                     "Custom words",
-                    "Names and technical terms retained from your existing settings.",
-                    value_pill(format!(
-                        "{} terms",
-                        self.settings.transcription.custom_words.len()
-                    )),
+                    "Comma-separated names and technical terms to bias recognition.",
+                    input_control(&self.custom_words_input),
                 ),
                 setting_row(
                     "Remove filler words",
@@ -299,42 +277,13 @@ impl SonarApp {
                 ),
                 setting_row(
                     "Trailing audio buffer",
-                    "Click to add 250 ms, wrapping after 1000 ms.",
-                    value_button(
-                        "audio-buffer",
-                        format!(
-                            "{} ms",
-                            self.settings.transcription.extra_recording_buffer_ms
-                        ),
-                    )
-                    .on_click(cx.listener(|app, _, _, cx| {
-                        app.settings.transcription.extra_recording_buffer_ms =
-                            if app.settings.transcription.extra_recording_buffer_ms >= 1000 {
-                                0
-                            } else {
-                                app.settings.transcription.extra_recording_buffer_ms + 250
-                            };
-                        app.persist_settings();
-                        cx.notify();
-                    })),
+                    "Milliseconds of audio kept after recording stops (0-5000).",
+                    input_control(&self.buffer_ms_input),
                 ),
                 setting_row(
                     "Correction threshold",
-                    "Click to increase fuzzy correction strength.",
-                    value_button(
-                        "correction-threshold",
-                        format!(
-                            "{:.2}",
-                            self.settings.transcription.word_correction_threshold
-                        ),
-                    )
-                    .on_click(cx.listener(|app, _, _, cx| {
-                        let current = app.settings.transcription.word_correction_threshold;
-                        app.settings.transcription.word_correction_threshold =
-                            if current >= 0.95 { 0.0 } else { current + 0.05 };
-                        app.persist_settings();
-                        cx.notify();
-                    })),
+                    "Fuzzy correction strength between 0 and 1.",
+                    input_control(&self.threshold_input),
                 ),
             ],
         )

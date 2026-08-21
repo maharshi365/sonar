@@ -12,12 +12,13 @@ use std::{
 };
 
 use gpui::{
-    px, size, App, AppContext, Bounds, Context, WindowBackgroundAppearance, WindowBounds,
-    WindowHandle, WindowKind, WindowOptions,
+    px, size, App, AppContext, Bounds, Context, Entity, KeyBinding, WindowBackgroundAppearance,
+    WindowBounds, WindowHandle, WindowKind, WindowOptions,
 };
 use sonar_models::{DownloadProgress, ModelStatus};
 
 use self::ui::overlay::OverlayView;
+use self::ui::text_input::{self, InputEvent, TextInput};
 use crate::{
     history::{HistoryEntry, HistoryStore},
     hotkeys::{HotkeyAction, Hotkeys},
@@ -61,6 +62,11 @@ struct SonarApp {
     progress: HashMap<String, DownloadProgress>,
     overlay: Option<WindowHandle<OverlayView>>,
     unload_generation: Arc<AtomicU64>,
+    history_limit_input: Entity<TextInput>,
+    buffer_ms_input: Entity<TextInput>,
+    threshold_input: Entity<TextInput>,
+    custom_words_input: Entity<TextInput>,
+    hf_token_input: Entity<TextInput>,
 }
 
 impl SonarApp {
@@ -93,6 +99,105 @@ impl SonarApp {
             }
         })
         .detach();
+        let history_limit_input = cx.new(|cx| {
+            TextInput::new(cx, settings.general.history_limit.to_string(), "100")
+        });
+        cx.subscribe(&history_limit_input, |app, input, _: &InputEvent, cx| {
+            let Ok(value) = input.read(cx).content().trim().parse::<i64>() else {
+                return;
+            };
+            let value = value.clamp(0, 10_000);
+            if value == app.settings.general.history_limit {
+                return;
+            }
+            app.settings.general.history_limit = value;
+            let limit = usize::try_from(value).unwrap_or_default();
+            if let Err(error) = app.history.prune(limit) {
+                app.error = Some(format!("Failed to prune history: {error}"));
+            }
+            app.reload_history();
+            app.persist_settings();
+            cx.notify();
+        })
+        .detach();
+        let buffer_ms_input = cx.new(|cx| {
+            TextInput::new(
+                cx,
+                settings.transcription.extra_recording_buffer_ms.to_string(),
+                "0",
+            )
+        });
+        cx.subscribe(&buffer_ms_input, |app, input, _: &InputEvent, cx| {
+            let Ok(value) = input.read(cx).content().trim().parse::<i64>() else {
+                return;
+            };
+            let value = value.clamp(0, 5_000);
+            if value == app.settings.transcription.extra_recording_buffer_ms {
+                return;
+            }
+            app.settings.transcription.extra_recording_buffer_ms = value;
+            app.persist_settings();
+            cx.notify();
+        })
+        .detach();
+        let threshold_input = cx.new(|cx| {
+            TextInput::new(
+                cx,
+                settings.transcription.word_correction_threshold.to_string(),
+                "0.18",
+            )
+        });
+        cx.subscribe(&threshold_input, |app, input, _: &InputEvent, cx| {
+            let Ok(value) = input.read(cx).content().trim().parse::<f64>() else {
+                return;
+            };
+            let value = value.clamp(0.0, 1.0);
+            if (value - app.settings.transcription.word_correction_threshold).abs() < f64::EPSILON
+            {
+                return;
+            }
+            app.settings.transcription.word_correction_threshold = value;
+            app.persist_settings();
+            cx.notify();
+        })
+        .detach();
+        let custom_words_input = cx.new(|cx| {
+            TextInput::new(
+                cx,
+                settings.transcription.custom_words.join(", "),
+                "e.g. Sonar, GPUI, whisper",
+            )
+        });
+        cx.subscribe(&custom_words_input, |app, input, _: &InputEvent, cx| {
+            let words: Vec<String> = input
+                .read(cx)
+                .content()
+                .split(',')
+                .map(str::trim)
+                .filter(|word| !word.is_empty())
+                .map(str::to_owned)
+                .collect();
+            if words == app.settings.transcription.custom_words {
+                return;
+            }
+            app.settings.transcription.custom_words = words;
+            app.persist_settings();
+            cx.notify();
+        })
+        .detach();
+        let hf_token_input = cx.new(|cx| {
+            TextInput::new(cx, settings.auth.hugging_face_token.clone(), "hf_...")
+        });
+        cx.subscribe(&hf_token_input, |app, input, _: &InputEvent, cx| {
+            let token = input.read(cx).content().trim().to_owned();
+            if token == app.settings.auth.hugging_face_token {
+                return;
+            }
+            app.settings.auth.hugging_face_token = token;
+            app.persist_settings();
+            cx.notify();
+        })
+        .detach();
         Self {
             page: Page::Transcribe,
             settings_tab: 0,
@@ -113,6 +218,11 @@ impl SonarApp {
             progress: HashMap::new(),
             overlay: None,
             unload_generation: Arc::new(AtomicU64::new(0)),
+            history_limit_input,
+            buffer_ms_input,
+            threshold_input,
+            custom_words_input,
+            hf_token_input,
         }
     }
 
@@ -337,24 +447,49 @@ pub(crate) fn run() {
     let service = SonarService::new(data_dir.join("models"), events_tx)
         .unwrap_or_else(|error| panic!("failed to initialize Sonar: {error}"));
 
-    gpui_platform::application().run(move |cx: &mut App| {
-        let bounds = Bounds::centered(None, size(px(1120.0), px(760.0)), cx);
-        cx.open_window(
-            WindowOptions {
-                window_bounds: Some(WindowBounds::Windowed(bounds)),
-                window_min_size: Some(size(px(760.0), px(560.0))),
-                titlebar: Some(gpui::TitlebarOptions {
-                    title: Some("Sonar".into()),
+    gpui_platform::application()
+        .with_assets(crate::assets::Assets)
+        .run(move |cx: &mut App| {
+            cx.bind_keys([
+                KeyBinding::new("backspace", text_input::Backspace, Some("TextInput")),
+                KeyBinding::new("delete", text_input::Delete, Some("TextInput")),
+                KeyBinding::new("left", text_input::Left, Some("TextInput")),
+                KeyBinding::new("right", text_input::Right, Some("TextInput")),
+                KeyBinding::new("shift-left", text_input::SelectLeft, Some("TextInput")),
+                KeyBinding::new("shift-right", text_input::SelectRight, Some("TextInput")),
+                KeyBinding::new("home", text_input::Home, Some("TextInput")),
+                KeyBinding::new("end", text_input::End, Some("TextInput")),
+                KeyBinding::new("ctrl-a", text_input::SelectAll, Some("TextInput")),
+                KeyBinding::new("ctrl-v", text_input::Paste, Some("TextInput")),
+                KeyBinding::new("ctrl-c", text_input::Copy, Some("TextInput")),
+                KeyBinding::new("ctrl-x", text_input::Cut, Some("TextInput")),
+                KeyBinding::new("cmd-a", text_input::SelectAll, Some("TextInput")),
+                KeyBinding::new("cmd-v", text_input::Paste, Some("TextInput")),
+                KeyBinding::new("cmd-c", text_input::Copy, Some("TextInput")),
+                KeyBinding::new("cmd-x", text_input::Cut, Some("TextInput")),
+                KeyBinding::new(
+                    "ctrl-cmd-space",
+                    text_input::ShowCharacterPalette,
+                    Some("TextInput"),
+                ),
+            ]);
+            let bounds = Bounds::centered(None, size(px(1120.0), px(760.0)), cx);
+            cx.open_window(
+                WindowOptions {
+                    window_bounds: Some(WindowBounds::Windowed(bounds)),
+                    window_min_size: Some(size(px(760.0), px(560.0))),
+                    titlebar: Some(gpui::TitlebarOptions {
+                        title: Some("Sonar".into()),
+                        ..Default::default()
+                    }),
+                    window_background: WindowBackgroundAppearance::Opaque,
                     ..Default::default()
-                }),
-                window_background: WindowBackgroundAppearance::Opaque,
-                ..Default::default()
-            },
-            move |_, cx| {
-                cx.new(|cx| SonarApp::new(settings_store, history, service, events_rx, cx))
-            },
-        )
-        .unwrap_or_else(|error| panic!("failed to open Sonar window: {error}"));
-        cx.activate(true);
-    });
+                },
+                move |_, cx| {
+                    cx.new(|cx| SonarApp::new(settings_store, history, service, events_rx, cx))
+                },
+            )
+            .unwrap_or_else(|error| panic!("failed to open Sonar window: {error}"));
+            cx.activate(true);
+        });
 }
