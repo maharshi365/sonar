@@ -9,7 +9,7 @@
 //! 2. `stop` stops the recorder, finalizes the stream (or runs a batch pass if
 //!    the model can't stream), and returns the final transcript.
 //!
-//! One pipeline instance lives for the whole process (see the napi layer).
+//! One pipeline instance lives for the whole application process.
 
 mod text;
 
@@ -30,7 +30,7 @@ pub struct SessionConfig {
     pub inference: InferenceConfig,
 }
 
-/// Callbacks the host (napi layer) supplies for a recording session.
+/// Callbacks the application supplies for a recording session.
 #[derive(Clone)]
 pub struct SessionCallbacks {
     pub on_text: Arc<dyn Fn(StreamText) + Send + Sync + 'static>,

@@ -4,9 +4,9 @@ Cross-platform desktop speech-to-text app. Users press a global shortcut, speak,
 
 ## Stack
 
-- Electron for the desktop UI.
+- GPUI for the native desktop UI.
 - Rust for audio processing, model management, and speech-to-text inference.
-- napi-rs to bridge Electron's Node main process with the Rust core (native addon, not a sidecar process).
+- A single native Rust process owns the UI and speech pipeline.
 
 ## Principles
 

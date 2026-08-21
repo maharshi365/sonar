@@ -3,8 +3,8 @@
 //! Handles downloading catalog models from Hugging Face into a local models
 //! directory, streaming progress back to the caller, resuming interrupted
 //! downloads, and removing models. Downloads run on Rust's own tokio runtime;
-//! progress is reported through a caller-supplied callback so the higher layer
-//! (napi) can forward it to JavaScript.
+//! progress is reported through a caller-supplied callback so the application
+//! can update its interface.
 
 mod catalog;
 
@@ -23,6 +23,7 @@ use catalog::CatalogModel;
 
 /// Local, on-disk status of a catalog model.
 #[derive(Debug, Clone, Serialize)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct ModelStatus {
     pub id: String,
     pub name: String,
@@ -49,8 +50,7 @@ pub struct DownloadProgress {
     pub percentage: f64,
 }
 
-/// Errors surfaced to the caller. Kept as strings so they cross the napi
-/// boundary cleanly.
+/// Errors surfaced to the caller as user-presentable strings.
 pub type DownloadResult<T> = Result<T, String>;
 
 /// Tracks in-flight downloads so we can report status and cancel them.
@@ -113,7 +113,7 @@ impl Manager {
 
         let downloaded_len = std::fs::metadata(&path).map(|m| m.len()).ok();
         let is_downloaded = downloaded_len.is_some_and(|len| len == model.size_bytes);
-        let partial_bytes = std::fs::metadata(&partial).map(|m| m.len()).unwrap_or(0);
+        let partial_bytes = std::fs::metadata(&partial).map_or(0, |m| m.len());
 
         ModelStatus {
             id: model.id.clone(),
@@ -259,10 +259,7 @@ impl Manager {
         let total = model.size_bytes;
 
         // Resume: how many bytes do we already have?
-        let mut have: u64 = fs::metadata(partial_path)
-            .await
-            .map(|m| m.len())
-            .unwrap_or(0);
+        let mut have: u64 = fs::metadata(partial_path).await.map_or(0, |m| m.len());
         if have > total {
             // Corrupt/oversized partial — start over.
             let _ = fs::remove_file(partial_path).await;

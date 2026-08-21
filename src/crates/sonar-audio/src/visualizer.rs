@@ -142,7 +142,7 @@ impl AudioVisualiser {
             };
             for bin in bins {
                 let magnitude = bin.norm();
-                power_sum += magnitude * magnitude;
+                power_sum = magnitude.mul_add(magnitude, power_sum);
             }
 
             let Some(bin_count) = end_bin

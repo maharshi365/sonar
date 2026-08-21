@@ -1,7 +1,7 @@
 [workspace]
 members = [
+  "sonar-app",
   "sonar-audio",
-  "sonar-core",
   "sonar-dictation",
   "sonar-input",
   "sonar-models",

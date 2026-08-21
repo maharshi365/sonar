@@ -323,9 +323,8 @@ unsafe extern "system" fn window_proc(
                 // SAFETY: Win32 clipboard calls are balanced in this block.
                 if unsafe { OpenClipboard(Some(hwnd)) }.is_ok() {
                     // SAFETY: Reading the current owner has no extra preconditions.
-                    let still_owner = unsafe { GetClipboardOwner() }
-                        .map(|owner| owner == hwnd)
-                        .unwrap_or(false);
+                    let still_owner =
+                        unsafe { GetClipboardOwner() }.is_ok_and(|owner| owner == hwnd);
                     if still_owner {
                         // SAFETY: Clipboard is open and still owned by this window.
                         unsafe { render_text(shared) };
@@ -377,8 +376,7 @@ fn on_timer(shared: &Shared) {
     let finish = shared
         .state
         .lock()
-        .map(|state| should_finish(&state, Instant::now()))
-        .unwrap_or(true);
+        .map_or(true, |state| should_finish(&state, Instant::now()));
     if !finish {
         return;
     }
@@ -386,9 +384,8 @@ fn on_timer(shared: &Shared) {
     let ownership_lost = shared
         .state
         .lock()
-        .map(|state| state.ownership_lost)
-        .unwrap_or(true);
-    let sequence = shared.sequence.lock().map(|value| *value).unwrap_or(0);
+        .map_or(true, |state| state.ownership_lost);
+    let sequence = shared.sequence.lock().map_or(0, |value| *value);
     // SAFETY: This function has no preconditions and only reads system state.
     if !ownership_lost && unsafe { GetClipboardSequenceNumber() } == sequence {
         // SAFETY: The snapshot contains owned copies suitable for SetClipboardData.
