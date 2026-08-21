@@ -22,7 +22,6 @@ impl SonarApp {
             div()
                 .border_1()
                 .border_color(rgb(BORDER))
-                .rounded_lg()
                 .bg(rgb(CARD))
                 .child(
                     div()
@@ -45,7 +44,11 @@ impl SonarApp {
                                         .child(created),
                                 )
                                 .child(
-                                    div().text_xs().text_color(rgb(MUTED)).child(entry.model_id),
+                                    div()
+                                        .text_xs()
+                                        .font_family("monospace")
+                                        .text_color(rgb(MUTED))
+                                        .child(entry.model_id),
                                 ),
                         )
                         .child(
@@ -92,10 +95,21 @@ impl SonarApp {
                     .flex()
                     .items_start()
                     .justify_between()
-                    .child(header(
-                        "History",
-                        "Transcriptions are stored only on this device.",
-                    ))
+                    .child(
+                        div()
+                            .child(
+                                div()
+                                    .mb_2()
+                                    .text_xs()
+                                    .font_weight(FontWeight::SEMIBOLD)
+                                    .text_color(rgb(0x761cff))
+                                    .child("S T O R E D   O N   T H I S   D E V I C E"),
+                            )
+                            .child(header(
+                                "Transcription history",
+                                "Revisit and copy your completed transcriptions. Nothing leaves your device.",
+                            )),
+                    )
                     .child(
                         danger_button("clear-history", "Clear history").on_click(cx.listener(
                             |app, _, _, cx| {

@@ -1,31 +1,43 @@
 use gpui::{div, prelude::*, px, rgb, Context, Div, FontWeight, Render, Stateful, Window};
 
-use super::{BACKGROUND, BORDER, DANGER, MUTED, SIDEBAR};
+use super::{
+    components::{app_logo, icon},
+    BACKGROUND, DANGER, MUTED, SIDEBAR,
+};
 use crate::app::{Page, SonarApp};
 
 impl SonarApp {
     fn nav_item(&self, page: Page, label: &'static str, cx: &mut Context<Self>) -> Stateful<Div> {
         let selected = self.page == page;
+        let icon_name = match page {
+            Page::Transcribe => "transcribe",
+            Page::History => "history",
+            Page::Models => "models",
+            Page::Settings => "settings",
+        };
         div()
             .id(label)
-            .px_4()
-            .py_3()
-            .rounded_md()
+            .px_2()
+            .h(px(34.0))
+            .flex()
+            .items_center()
+            .gap_2()
             .cursor_pointer()
-            .text_sm()
+            .text_xs()
             .font_weight(FontWeight::MEDIUM)
             .when(selected, |item| {
-                item.bg(rgb(0x302c38)).text_color(rgb(0xffffff))
+                item.bg(rgb(0x292a2e)).text_color(rgb(0xffffff))
             })
             .when(!selected, |item| {
                 item.text_color(rgb(MUTED))
-                    .hover(|style| style.bg(rgb(0x2b2930)).text_color(rgb(0xffffff)))
+                    .hover(|style| style.bg(rgb(0x232429)).text_color(rgb(0xffffff)))
             })
             .on_click(cx.listener(move |app, _, _, cx| {
                 app.page = page;
                 app.error = None;
                 cx.notify();
             }))
+            .child(icon(icon_name))
             .child(label)
     }
 }
@@ -46,22 +58,24 @@ impl Render for SonarApp {
             .font_family("Inter")
             .child(
                 div()
-                    .w(px(224.0))
+                    .w(px(223.0))
                     .h_full()
                     .flex()
                     .flex_col()
-                    .border_r_1()
-                    .border_color(rgb(BORDER))
                     .bg(rgb(SIDEBAR))
-                    .p_4()
+                    .p_2()
                     .child(
                         div()
-                            .px_3()
-                            .py_4()
-                            .mb_4()
-                            .text_xl()
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .child("SONAR"),
+                            .h(px(57.0))
+                            .px_2()
+                            .mb_2()
+                            .flex()
+                            .items_center()
+                            .gap_3()
+                            .child(app_logo())
+                            .child(div().text_sm().font_weight(FontWeight::BOLD).child("SONAR"))
+                            .child(div().flex_1())
+                            .child(icon("panel")),
                     )
                     .child(self.nav_item(Page::Transcribe, "Transcribe", cx))
                     .child(self.nav_item(Page::History, "History", cx))
@@ -74,7 +88,9 @@ impl Render for SonarApp {
                     .min_w_0()
                     .flex_1()
                     .h_full()
-                    .p_8()
+                    .pt(px(44.0))
+                    .px(px(48.0))
+                    .pb(px(32.0))
                     .flex()
                     .flex_col()
                     .when_some(self.error.clone(), |root, error| {

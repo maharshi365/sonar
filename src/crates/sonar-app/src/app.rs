@@ -236,7 +236,7 @@ impl SonarApp {
         if self.overlay.is_some() {
             return;
         }
-        let bounds = Bounds::centered(None, size(px(560.0), px(170.0)), cx);
+        let bounds = Bounds::centered(None, size(px(640.0), px(512.0)), cx);
         let options = WindowOptions {
             window_bounds: Some(WindowBounds::Windowed(bounds)),
             titlebar: None,

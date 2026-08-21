@@ -113,7 +113,7 @@ impl SonarApp {
             vec![
                 setting_row(
                     "Default speech model",
-                    "Click to cycle through downloaded models.",
+                    "The downloaded model used for transcription.",
                     value_button("default-model", current_name).on_click(cx.listener(
                         |app, _, _, cx| {
                             let downloaded: Vec<_> = app
@@ -135,7 +135,7 @@ impl SonarApp {
                 ),
                 setting_row(
                     "Unload model",
-                    "Release model memory after Sonar is idle.",
+                    "Release model memory after Sonar has been idle.",
                     value_button(
                         "unload-timeout",
                         unload_label(self.settings.general.model_unload_timeout),
@@ -149,7 +149,7 @@ impl SonarApp {
                 ),
                 setting_row(
                     "History limit",
-                    "Click to cycle 0, 100, 500, and 1000 entries.",
+                    "Maximum saved transcripts. Set to 0 to disable and clear history.",
                     value_button(
                         "history-limit",
                         self.settings.general.history_limit.to_string(),
@@ -174,6 +174,14 @@ impl SonarApp {
                 ),
             ],
         )
+        .child(div().mt_6().child(settings_group(
+            "Updates",
+            vec![setting_row(
+                "Sonar updates",
+                "Version undefined. Check GitHub for a newer release.",
+                value_button("check-updates", "Check for updates"),
+            )],
+        )))
         .into_any_element()
     }
 
