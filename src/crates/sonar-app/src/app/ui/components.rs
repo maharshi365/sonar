@@ -20,6 +20,10 @@ pub(in crate::app::ui) fn action_button(
     id: impl Into<SharedString>,
     label: impl Into<SharedString>,
 ) -> Stateful<Div> {
+    button_base(id, label).hover(|style| style.bg(rgb(0x323038)))
+}
+
+fn button_base(id: impl Into<SharedString>, label: impl Into<SharedString>) -> Stateful<Div> {
     div()
         .id(id.into())
         .px_3()
@@ -27,7 +31,6 @@ pub(in crate::app::ui) fn action_button(
         .rounded_md()
         .border_1()
         .border_color(rgb(BORDER))
-        .hover(|style| style.bg(rgb(0x323038)))
         .cursor_pointer()
         .text_xs()
         .child(label.into())
@@ -37,7 +40,7 @@ pub(in crate::app::ui) fn primary_button(
     id: impl Into<SharedString>,
     label: impl Into<SharedString>,
 ) -> Stateful<Div> {
-    action_button(id, label)
+    button_base(id, label)
         .bg(rgb(PRIMARY))
         .border_color(rgb(PRIMARY))
         .hover(|style| style.bg(rgb(PRIMARY_HOVER)))
